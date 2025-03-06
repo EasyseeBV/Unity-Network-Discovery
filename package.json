@@ -1,0 +1,11 @@
+{
+    "name": "com.easysee.sharedNetcode",
+    "version": "1.0.0",
+    "displayName": "Networking Package",
+    "description": "Shared local networking package.",
+    "unity": "6000.0",
+    "author": {
+      "name": "Oeds de Boer",
+      "email": "oeds@easysee.nl"
+    }
+}
