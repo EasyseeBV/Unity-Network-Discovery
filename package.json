@@ -1,5 +1,5 @@
 {
-    "name": "com.easysee.sharedNetcode",
+    "name": "com.easysee.sharednetcode",
     "version": "1.0.0",
     "displayName": "Networking Package",
     "description": "Shared local networking package.",
