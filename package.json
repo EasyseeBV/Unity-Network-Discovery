@@ -1,8 +1,8 @@
 {
-    "name": "com.easysee.sharednetcode",
+    "name": "com.easysee.networkdiscovery",
     "version": "1.0.0",
     "displayName": "Networking Package",
-    "description": "Shared local networking package.",
+    "description": "A library to allow local network discovery..",
     "unity": "6000.0",
     "author": {
       "name": "oeds",
