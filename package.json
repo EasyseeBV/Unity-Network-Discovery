@@ -7,5 +7,9 @@
     "author": {
       "name": "oeds",
       "email": "oeds@easysee.nl"
-    }
+    },
+  "dependencies": {
+    "com.unity.netcode.gameobjects": "2.2.0",
+    "com.unity.transport": "2.4.0" 
+  }
 }
