@@ -1,8 +1,8 @@
 {
     "name": "com.easysee.networkdiscovery",
     "version": "1.0.0",
-    "displayName": "Networking Package",
-    "description": "A library to allow local network discovery..",
+    "displayName": "Network Discovery System",
+    "description": "A library for local network discovery, allowing server/clients to find each-other over their local network.",
     "unity": "6000.0",
     "author": {
       "name": "oeds",
