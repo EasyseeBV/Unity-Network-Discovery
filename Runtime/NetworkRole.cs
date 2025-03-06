@@ -1,5 +1,8 @@
-public enum NetworkRole
+namespace Network_Discovery
 {
-    Client,
-    Server
+    public enum NetworkRole
+    {
+        Client,
+        Server
+    }
 }
