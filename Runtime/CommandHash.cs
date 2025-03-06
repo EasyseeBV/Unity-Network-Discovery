@@ -1,23 +1,20 @@
 using UnityEngine;
 
-namespace Networking
+public static class CommandHash
 {
-    public static class CommandHash
+    public static uint ComputeHash(string text)
     {
-        public static uint ComputeHash(string text)
+        unchecked
         {
-            unchecked
+            const uint fnvPrime = 0x01000193;
+            var hash = 0x811C9DC5;
+            foreach (var c in text)
             {
-                const uint fnvPrime = 0x01000193;
-                var hash = 0x811C9DC5;
-                foreach (var c in text)
-                {
-                    hash ^= c;
-                    hash *= fnvPrime;
-                }
-                return hash;
+                hash ^= c;
+                hash *= fnvPrime;
             }
+
+            return hash;
         }
     }
-
 }

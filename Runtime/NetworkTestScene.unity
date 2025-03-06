@@ -119,6 +119,17 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!114 &518398519 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 7317702115413688588, guid: 532011fef6124a0429903c5d34a171da, type: 3}
+  m_PrefabInstance: {fileID: 5397001346884389398}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 593a2fe42fa9d37498c96f9a383b6521, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1275345772
 GameObject:
   m_ObjectHideFlags: 0
@@ -130,7 +141,6 @@ GameObject:
   - component: {fileID: 1275345775}
   - component: {fileID: 1275345774}
   - component: {fileID: 1275345773}
-  - component: {fileID: 1275345776}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -212,50 +222,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1802602553}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1275345776
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1275345772}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_RenderShadows: 1
-  m_RequiresDepthTextureOption: 2
-  m_RequiresOpaqueTextureOption: 2
-  m_CameraType: 0
-  m_Cameras: []
-  m_RendererIndex: -1
-  m_VolumeLayerMask:
-    serializedVersion: 2
-    m_Bits: 1
-  m_VolumeTrigger: {fileID: 0}
-  m_VolumeFrameworkUpdateModeOption: 2
-  m_RenderPostProcessing: 0
-  m_Antialiasing: 0
-  m_AntialiasingQuality: 2
-  m_StopNaN: 0
-  m_Dithering: 0
-  m_ClearDepth: 1
-  m_AllowXRRendering: 1
-  m_AllowHDROutput: 1
-  m_UseScreenCoordOverride: 0
-  m_ScreenSizeOverride: {x: 0, y: 0, z: 0, w: 0}
-  m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
-  m_RequiresDepthTexture: 0
-  m_RequiresColorTexture: 0
-  m_Version: 2
-  m_TaaSettings:
-    m_Quality: 3
-    m_FrameInfluence: 0.1
-    m_JitterScale: 1
-    m_MipBias: 0
-    m_VarianceClampScale: 0.9
-    m_ContrastAdaptiveSharpening: 0
 --- !u!1 &1802602552
 GameObject:
   m_ObjectHideFlags: 0
@@ -449,10 +415,22 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 3151856803204961889, guid: 532011fef6124a0429903c5d34a171da, type: 3}
+      propertyPath: sharedKey
+      value: "XyZ!@#456^&*(aB8)dEfGh\xA1\u2122\xA3\xA2\u221E\xA7\xB6\u2022\xAA\xBA\u2013\u2260\u0153\u2211\xB4\xAE\u2020\xA5\xA8\u02C6\xF8\u03C0\u201C\u2018\xE5\xDF\u2202\u0192\xA9\u2206\u02DA\xAC\u2026\xE6\u03A9\u2248\xE7\u221A\u222B~\xB5\u2264\u2265\xF7\u2202\xDF\u03A9\u2211\xAE\u2020\xA5\xFC\xEE\u221A\u0153\u03C0\u2211\xB4\xAE\u2020\xA9\u0192\xA3\xA2\u221E\xA7\xB6\u2022\xAA\xBA\u2013\u2260\u0153\u03C0\u2211\xB4\xAE\u2020\xA5\xA8\u02C6\xF8\u03C0\u201C\u2018\xE5\xDF\u2202\u0192\xA9\u2206\u02DA\xAC\u2026\xE6\u03A9\u2248\xE7\u221A\u222B~\xB5\u2264\u2265\xF7\u2202\xDF\u03A9\u2211\xAE\u2020\xA5\xFC\xEE\u221A\u0153\u03C0\u2211\xB4\xAE\u2020\xA9\u0192\u20BF\u2714\u2716\u2730\u26A1\U0001F30D\U0001F680\U0001F511\U0001F512\U0001F3B5\U0001F522\U0001F520\U0001F004\U0001F0CF\U0001F4A1\U0001F31F\U0001F6E0\U0001F48E\U0001F300\U0001F3B2\U0001F3AF\U0001F525"
+      objectReference: {fileID: 0}
+    - target: {fileID: 3151856803204961889, guid: 532011fef6124a0429903c5d34a171da, type: 3}
+      propertyPath: m_StartWithServer
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 3199748884638232798, guid: 532011fef6124a0429903c5d34a171da, type: 3}
       propertyPath: m_Name
       value: Network Manager
       objectReference: {fileID: 0}
+    - target: {fileID: 4244008723855464102, guid: 532011fef6124a0429903c5d34a171da, type: 3}
+      propertyPath: _networkManager
+      value: 
+      objectReference: {fileID: 518398519}
     - target: {fileID: 5948215697238142043, guid: 532011fef6124a0429903c5d34a171da, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -491,6 +469,14 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5948215697238142043, guid: 532011fef6124a0429903c5d34a171da, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7317702115413688588, guid: 532011fef6124a0429903c5d34a171da, type: 3}
+      propertyPath: NetworkConfig.ConnectionApproval
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8841589951826112395, guid: 532011fef6124a0429903c5d34a171da, type: 3}
+      propertyPath: m_UseEncryption
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
