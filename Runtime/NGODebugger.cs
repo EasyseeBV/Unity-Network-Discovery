@@ -15,10 +15,12 @@ namespace Network_Discovery
         [SerializeField] private ulong localId;
         [Header("Runtime Status (Read-Only)")]
         [SerializeField, Tooltip("True if the local instance is acting as a Server.")]
-        private bool isServer;
+        private bool isConnectedServer;
+        public bool IsConnectedServer => isConnectedServer;
 
         [SerializeField, Tooltip("True if the local instance is acting as a Client.")]
-        private bool isClient;
+        private bool isConnectedClient;
+        public bool IsConnectedClient => isConnectedClient;
 
         [SerializeField, Tooltip("True if the local instance is acting as a Host.")]
         private bool isHost;
@@ -69,8 +71,8 @@ namespace Network_Discovery
             if (_networkManager == null) return;
 
             // Update bools
-            isServer = _networkManager.IsServer;
-            isClient = _networkManager.IsClient;
+            isConnectedServer = _networkManager.IsServer;
+            isConnectedClient = _networkManager.IsClient;
             isHost = _networkManager.IsHost;
             localId = _networkManager.LocalClientId;
 
