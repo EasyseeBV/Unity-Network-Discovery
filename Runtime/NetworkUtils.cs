@@ -19,9 +19,16 @@ namespace Network_Discovery
             if (string.IsNullOrEmpty(key))
                 return new string('0', 128); // Default to a 128-char string of zeroes
 
-            using SHA512 sha512 = SHA512.Create(); // Use SHA-512 instead of SHA-256
+            int maxLength = 16;
+            if (key.Length > maxLength)
+            {
+                key = key.Substring(0, maxLength);
+            }
+
+            using SHA512 sha512 = SHA512.Create();
             byte[] hashBytes = sha512.ComputeHash(Encoding.UTF8.GetBytes(key));
             return BitConverter.ToString(hashBytes).Replace("-", "").ToLower(); // 128-char hex string
         }
+
     }
 }
