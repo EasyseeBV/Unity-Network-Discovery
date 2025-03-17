@@ -116,8 +116,24 @@ namespace Network_Discovery
 
         private void Awake()
         {
-            if (!transport) transport = FindFirstObjectByType<UnityTransport>();
-            if (!networkManager) networkManager = FindFirstObjectByType<NetworkManager>();
+            // Additional reference checks
+            if (!transport)
+            {
+                transport = FindFirstObjectByType<UnityTransport>();
+                if (!transport)
+                {
+                    Debug.LogError("[NetworkDiscovery] UnityTransport not set or found! Discovery cannot run.");
+                }
+            }
+
+            if (!networkManager)
+            {
+                networkManager = FindFirstObjectByType<NetworkManager>();
+                if (!networkManager)
+                {
+                    Debug.LogError("[NetworkDiscovery] NetworkManager not set or found! Discovery cannot run.");
+                }
+            }
         }
 
         private void OnEnable()
@@ -128,10 +144,12 @@ namespace Network_Discovery
             }
             _networkReachabilityCheckCR = StartCoroutine(NetworkReachabilityCheckCR());
 
-            networkManager.OnServerStarted += OnServerStarted;
-            
-            networkManager.OnServerStopped += HandleConnectionChange;
-            networkManager.OnClientStopped += HandleConnectionChange;
+            if (networkManager != null)
+            {
+                networkManager.OnServerStarted += OnServerStarted;
+                networkManager.OnServerStopped += HandleConnectionChange;
+                networkManager.OnClientStopped += HandleConnectionChange;
+            }
         }
 
         private void OnDisable()
@@ -139,15 +157,26 @@ namespace Network_Discovery
             StopAllCoroutines();
             StopDiscovery();
 
-            networkManager.OnServerStarted -= OnServerStarted;
-            
-            networkManager.OnServerStopped -= HandleConnectionChange;
-            networkManager.OnClientStopped -= HandleConnectionChange;
+            if (networkManager != null)
+            {
+                networkManager.OnServerStarted -= OnServerStarted;
+                networkManager.OnServerStopped -= HandleConnectionChange;
+                networkManager.OnClientStopped -= HandleConnectionChange;
+            }
         }
 
         private void OnApplicationQuit() => StopDiscovery();
 
-        private void Start() => StartConnection();
+        private void Start()
+        {
+            // If references are missing, don't attempt discovery.
+            if (!networkManager || !transport)
+            {
+                return;
+            }
+
+            StartConnection();
+        }
 
         #endregion
 
@@ -159,6 +188,8 @@ namespace Network_Discovery
         /// </summary>
         private void StartConnection()
         {
+            if (!networkManager || !transport) return;
+
             if (_broadcastCR != null) StopCoroutine(_broadcastCR);
             _broadcastCR = StartCoroutine(StartConnectionCR());
 
@@ -166,10 +197,18 @@ namespace Network_Discovery
             {
                 yield return new WaitForSeconds(0.5f);
 
+                // Wait until any network shutdown in progress has completed.
                 yield return new WaitUntil(() => !networkManager.ShutdownInProgress);
 
-                if (role == NetworkRole.Server) HostGame();
-                else StartCoroutine(ClientBroadcastCR());
+                if (role == NetworkRole.Server)
+                {
+                    HostGame();
+                }
+                else
+                {
+                    // If not hosting, start broadcasting as a client.
+                    StartCoroutine(ClientBroadcastCR());
+                }
             }
         }
 
@@ -178,10 +217,24 @@ namespace Network_Discovery
         /// </summary>
         private void HostGame()
         {
-            var localIp = Dns.GetHostEntry(Dns.GetHostName())
-                .AddressList
-                .First(a => a.AddressFamily == AddressFamily.InterNetwork)
-                .ToString();
+            if (!transport) return;
+
+            string localIp;
+
+            // Safely try to gather host entry
+            try
+            {
+                localIp = Dns
+                    .GetHostEntry(Dns.GetHostName())
+                    .AddressList
+                    .First(a => a.AddressFamily == AddressFamily.InterNetwork)
+                    .ToString();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LocalNetworkDiscovery] Failed to obtain local IP: {e}");
+                return;
+            }
 
             Debug.Log($"[LocalNetworkDiscovery] Hosting on IP: {localIp}, Port: {transport.ConnectionData.Port}");
             transport.SetConnectionData(localIp, transport.ConnectionData.Port);
@@ -194,9 +247,10 @@ namespace Network_Discovery
         /// </summary>
         private IEnumerator ClientBroadcastCR()
         {
+            // StartDiscovery for client mode after clientBroadcastDelay
             yield return StartCoroutine(StartDiscovery(false, clientBroadcastDelay));
 
-            WaitForSeconds wait = new WaitForSeconds(clientBroadcastPingInterval);
+            var wait = new WaitForSeconds(clientBroadcastPingInterval);
 
             while (!networkManager.IsConnectedClient)
             {
@@ -236,12 +290,21 @@ namespace Network_Discovery
 
             _cancellationTokenSource = new CancellationTokenSource();
 
-            // Server binds to the specified port; client binds to 0 (auto-select).
-            _client = new UdpClient(serverMode ? port : 0)
+            // If in server mode, bind to the specified port; client binds to 0 (auto-select).
+            // Added try-catch in case the port is in use or unavailable.
+            try
             {
-                EnableBroadcast = true,
-                MulticastLoopback = false
-            };
+                _client = new UdpClient(serverMode ? port : 0)
+                {
+                    EnableBroadcast = true,
+                    MulticastLoopback = false
+                };
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[NetworkDiscovery] Failed to create UdpClient: {e}");
+                yield break;
+            }
 
             _ = ListenAsync(
                 _cancellationTokenSource.Token,
@@ -278,10 +341,11 @@ namespace Network_Discovery
                 try
                 {
                     _client.Close();
+                    _client.Dispose(); // Additional cleanup
                 }
                 catch
                 {
-                    // Ignored
+                    // Intentionally ignored
                 }
 
                 _client = null;
@@ -295,23 +359,35 @@ namespace Network_Discovery
         {
             if (!IsClient)
             {
-                throw new InvalidOperationException(
-                    "Cannot send client broadcast while not running in client mode."
-                );
+                Debug.LogWarning("[NetworkDiscovery] Attempted client broadcast while not in client mode.");
+                return;
+            }
+
+            if (_client == null)
+            {
+                Debug.LogError("[NetworkDiscovery] UDP client is not initialized, cannot broadcast.");
+                return;
             }
 
             IPEndPoint endPoint = new IPEndPoint(IPAddress.Broadcast, port);
 
             using FastBufferWriter writer = new FastBufferWriter(
-                WriterInitialCapacity, 
-                Allocator.Temp, 
+                WriterInitialCapacity,
+                Allocator.Temp,
                 WriterMaxCapacity
             );
             WriteHeader(writer, MessageType.BroadCast);
             writer.WriteNetworkSerializable(broadCast);
             byte[] data = writer.ToArray();
 
-            _client?.SendAsync(data, data.Length, endPoint);
+            try
+            {
+                _client.SendAsync(data, data.Length, endPoint);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[NetworkDiscovery] Failed to send broadcast: {e}");
+            }
         }
 
         #endregion
@@ -327,7 +403,8 @@ namespace Network_Discovery
             {
                 try
                 {
-                    await onReceiveTask();
+                    // Each iteration calls the relevant receive method.
+                    await onReceiveTask().ConfigureAwait(false);
                 }
                 catch (ObjectDisposedException)
                 {
@@ -349,7 +426,19 @@ namespace Network_Discovery
         /// </summary>
         private async Task ReceiveResponseAsync()
         {
-            UdpReceiveResult udpReceiveResult = await _client.ReceiveAsync();
+            if (_client == null) return;
+
+            UdpReceiveResult udpReceiveResult;
+            try
+            {
+                udpReceiveResult = await _client.ReceiveAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[NetworkDiscovery] Error receiving client response: {ex}");
+                return;
+            }
+
             var segment = new ArraySegment<byte>(
                 udpReceiveResult.Buffer, 0, udpReceiveResult.Buffer.Length
             );
@@ -377,7 +466,19 @@ namespace Network_Discovery
         /// </summary>
         private async Task ReceiveBroadcastAsync()
         {
-            UdpReceiveResult udpReceiveResult = await _client.ReceiveAsync();
+            if (_client == null) return;
+
+            UdpReceiveResult udpReceiveResult;
+            try
+            {
+                udpReceiveResult = await _client.ReceiveAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[NetworkDiscovery] Error receiving server broadcast: {ex}");
+                return;
+            }
+
             var segment = new ArraySegment<byte>(
                 udpReceiveResult.Buffer, 0, udpReceiveResult.Buffer.Length
             );
@@ -393,7 +494,7 @@ namespace Network_Discovery
 
                 reader.ReadNetworkSerializable(out DiscoveryBroadcastData receivedBroadcast);
 
-                if (ProcessBroadcastImpl(udpReceiveResult.RemoteEndPoint, receivedBroadcast, 
+                if (ProcessBroadcastImpl(udpReceiveResult.RemoteEndPoint, receivedBroadcast,
                     out DiscoveryResponseData response))
                 {
                     SendResponse(response, udpReceiveResult.RemoteEndPoint);
@@ -406,40 +507,55 @@ namespace Network_Discovery
         }
 
         /// <summary>
-        /// Sends a response from server to client upon successful broadcast processing.
+        /// Sends a response from the server to the client upon successful broadcast processing.
         /// </summary>
         private void SendResponse(DiscoveryResponseData response, IPEndPoint endPoint)
         {
-            using FastBufferWriter writer = new FastBufferWriter(WriterInitialCapacity, Allocator.Temp, WriterMaxCapacity);
+            if (_client == null) return;
+
+            using FastBufferWriter writer = new FastBufferWriter(
+                WriterInitialCapacity,
+                Allocator.Temp,
+                WriterMaxCapacity
+            );
             WriteHeader(writer, MessageType.Response);
             writer.WriteNetworkSerializable(response);
             byte[] data = writer.ToArray();
 
-            _client?.SendAsync(data, data.Length, endPoint);
+            try
+            {
+                _client.SendAsync(data, data.Length, endPoint);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[NetworkDiscovery] Failed to send response: {e}");
+            }
         }
 
         /// <summary>
         /// Validates the broadcast against the shared key and nonce; prepares a response if valid.
         /// </summary>
         private bool ProcessBroadcastImpl(
-            IPEndPoint sender, 
-            DiscoveryBroadcastData broadCast, 
+            IPEndPoint sender,
+            DiscoveryBroadcastData broadCast,
             out DiscoveryResponseData response
         )
         {
+            response = default;
+
+            // Compare hash to ensure the shared keys match
             string expectedHash = NetworkUtils.HashKey(sharedKey);
 
             if (broadCast.AuthTokenHash != expectedHash)
             {
                 Debug.Log("[Authentication] Invalid key, ignoring client broadcast.");
-                response = default;
                 return false;
             }
 
+            // Check nonce/timestamp to prevent replay attacks
             if (!nonceManager.ValidateAndStoreNonce(broadCast.Nonce, broadCast.Timestamp))
             {
                 Debug.Log("[Authentication] Nonce/timestamp check failed, ignoring client broadcast.");
-                response = default;
                 return false;
             }
 
@@ -454,6 +570,7 @@ namespace Network_Discovery
         /// </summary>
         private void ResponseReceivedImpl(IPEndPoint sender, DiscoveryResponseData response)
         {
+            // Check the server's authentication hash
             string expectedHash = NetworkUtils.HashKey(sharedKey);
 
             if (response.AuthTokenHash != expectedHash)
@@ -462,7 +579,7 @@ namespace Network_Discovery
                 return;
             }
 
-            // Normal connection process
+            // Then connect the client
             transport.SetConnectionData(sender.Address.ToString(), response.Port);
             networkManager.StartClient();
         }
@@ -486,6 +603,10 @@ namespace Network_Discovery
 
         #region Network Change Monitoring
 
+        /// <summary>
+        /// Periodically checks Unity's network reachability status.
+        /// If it changes, handles any required reconnection or cleanup logic.
+        /// </summary>
         private IEnumerator NetworkReachabilityCheckCR()
         {
             while (true)
@@ -501,31 +622,39 @@ namespace Network_Discovery
             }
         }
 
+        /// <summary>
+        /// Called when the server or client shuts down.
+        /// </summary>
         private void HandleConnectionChange(bool cleanChange)
         {
             Debug.Log("Connection state changed.");
-        
             if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
             {
                 Debug.Log("[NetworkDiscovery] Stopping NetworkManager before making changes.");
                 NetworkManager.Singleton.Shutdown();
             }
-            
+
+            // Attempt to restart the connection after shutdown
             StartConnection();
         }
+
+        /// <summary>
+        /// Monitors changes to the internet reachability. If no network is found,
+        /// the manager is shut down. Otherwise, attempts to reconfigure and reconnect.
+        /// </summary>
         private void HandleNetworkChange()
         {
             Debug.Log($"Network state changed to: {_lastReachability}");
-        
+
             if (_lastReachability == NetworkReachability.NotReachable)
             {
-                if (NetworkManager.Singleton) 
+                if (NetworkManager.Singleton)
                 {
                     Debug.Log("[NetworkDiscovery] Network unreachable, stopping NetworkManager.");
                     NetworkManager.Singleton.Shutdown();
                 }
             }
-        
+
             if (transport != null)
             {
                 if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
@@ -533,12 +662,12 @@ namespace Network_Discovery
                     Debug.Log("[NetworkDiscovery] Network state changed, stopping NetworkManager before reconfiguration.");
                     NetworkManager.Singleton.Shutdown();
                 }
-        
-                // It's a good idea to stop ongoing discovery or network operations 
-                // and restart them with any updated connection parameters.
+
+                // Example of reconfiguring the transport with a new IP or hostname.
                 transport.SetConnectionData("NEW_IP_OR_HOSTNAME", transport.ConnectionData.Port);
                 Debug.Log("Transport connection data updated.");
-                
+
+                // Restart discovery/connection under new conditions.
                 StartConnection();
             }
         }
