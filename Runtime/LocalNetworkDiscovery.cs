@@ -15,7 +15,7 @@ namespace Network_Discovery
     /// </summary>
     public class LocalNetworkDiscovery : NetworkDiscovery<DiscoveryBroadcastData, DiscoveryResponseData>
     {
-        public static LocalNetworkDiscovery Instance { get; private set; }
+        private static LocalNetworkDiscovery Instance { get; set; }
 
         [Header("Network Role")]
         [Tooltip("Specifies the role of the network (Server or Client).")]
@@ -52,13 +52,12 @@ namespace Network_Discovery
             if (!networkManager) networkManager = FindFirstObjectByType<NetworkManager>();
         }
 
-        private void OnEnable()
+        protected override void OnEnable()
         {
+            base.OnEnable();
             // Ensure only one instance
-            if (Instance != null)
-            {
-                Destroy(Instance.gameObject);
-            }
+            if (Instance != null) Destroy(Instance.gameObject);
+            
 
             Instance = this;
 

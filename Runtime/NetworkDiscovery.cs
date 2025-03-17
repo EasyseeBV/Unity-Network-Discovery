@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Unity.Collections;
 using Unity.Netcode;
+using Unity.Netcode.Transports.UTP;
 using UnityEngine;
 
 namespace Network_Discovery
@@ -55,6 +56,9 @@ namespace Network_Discovery
         /// The port used for sending/receiving broadcasts.
         /// </summary>
         public ushort Port => port;
+        
+        private Coroutine _networkReachabilityCheckCR;
+        private NetworkReachability _lastReachability;
 
         private enum MessageType : byte
         {
@@ -64,7 +68,21 @@ namespace Network_Discovery
 
         #region Unity Callbacks
 
-        protected virtual void OnDisable() => StopDiscovery();
+        protected virtual void OnEnable()
+        {
+            if (_networkReachabilityCheckCR != null)
+            {
+                StopCoroutine(_networkReachabilityCheckCR);
+            }
+            
+            _networkReachabilityCheckCR = StartCoroutine(NetworkReachabilityCheckCR());
+        }
+
+        protected virtual void OnDisable()
+        {
+            StopAllCoroutines();
+            StopDiscovery();
+        } 
 
         protected virtual void OnApplicationQuit() => StopDiscovery();
 
@@ -278,5 +296,39 @@ namespace Network_Discovery
         }
 
         #endregion
+        
+        private IEnumerator NetworkReachabilityCheckCR()
+        {
+            while (true)
+            {
+                NetworkReachability currentReachability = Application.internetReachability;
+                if (currentReachability != _lastReachability)
+                {
+                    _lastReachability = currentReachability;
+                    HandleNetworkChange();
+                }
+
+                yield return new WaitForSeconds(3f);
+            }
+        }
+
+        private void HandleNetworkChange()
+        {
+            Debug.Log($"Network state changed to: {_lastReachability}");
+
+            // Here you can update your connection parameters,
+            // for example prompting UnityTransport to update its connection data.
+            UnityTransport transport = FindObjectOfType<UnityTransport>();
+            if (transport != null)
+            {
+                // It's a good idea to stop any ongoing discovery or network operations
+                // and restart them with the new connection parameters.
+                transport.SetConnectionData("NEW_IP_OR_HOSTNAME", transport.ConnectionData.Port);
+                Debug.Log("Transport connection data updated.");
+            }
+
+            // Restart or reinitialize your network discovery (if needed)
+            // This might involve calling your discovery's StopDiscovery/StartClient or StartServer methods.
+        }
     }
 }
