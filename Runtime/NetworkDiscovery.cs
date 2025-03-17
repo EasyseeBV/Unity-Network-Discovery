@@ -166,8 +166,9 @@ namespace Network_Discovery
             StopAllCoroutines();
             
             // Restart connection
-            StartCoroutine(StartConnectionCR());
             StartCoroutine(NetworkReachabilityCheckCR());
+            if (_lastReachability == NetworkReachability.NotReachable) return;
+            StartCoroutine(StartConnectionCR());
 
             IEnumerator StartConnectionCR()
             {
