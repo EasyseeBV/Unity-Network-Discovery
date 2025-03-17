@@ -153,9 +153,7 @@ namespace Network_Discovery
         }
 
         private void OnApplicationQuit() => StopDiscovery();
-
-        private void Start() => StartConnection();
-
+        
         #endregion
 
         #region Connection and Discovery Initiation
