@@ -507,7 +507,7 @@ namespace Network_Discovery
                 if (currentReachability != _lastReachability)
                 {
                     _lastReachability = currentReachability;
-                    //HandleNetworkChange();
+                    HandleNetworkChange();
                 }
 
                 yield return new WaitForSeconds(3f);
