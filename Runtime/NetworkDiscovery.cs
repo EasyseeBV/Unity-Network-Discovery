@@ -135,8 +135,6 @@ namespace Network_Discovery
             Instance = this;
 
             networkManager.OnServerStarted += OnServerStarted;
-            networkManager.OnServerStopped += StartConnection;
-            networkManager.OnClientStopped += StartConnection;
         }
 
         private void OnDisable()
@@ -154,10 +152,7 @@ namespace Network_Discovery
             StopDiscovery();
         }
 
-        private void Start()
-        {
-            StartConnection(true);
-        }
+        private void Start() => StartConnection(true);
 
         #endregion
 
@@ -175,19 +170,10 @@ namespace Network_Discovery
             {
                 yield return new WaitForSeconds(0.5f);
 
-                if (networkManager.ShutdownInProgress)
-                {
-                    yield break;
-                }
+                yield return new WaitUntil(() => !networkManager.ShutdownInProgress);
 
-                if (role == NetworkRole.Server)
-                {
-                    HostGame();
-                }
-                else
-                {
-                    StartCoroutine(ClientBroadcastCR());
-                }
+                if (role == NetworkRole.Server) HostGame();
+                else StartCoroutine(ClientBroadcastCR());
             }
         }
 
@@ -538,6 +524,8 @@ namespace Network_Discovery
                 // and restart them with any updated connection parameters.
                 t.SetConnectionData("NEW_IP_OR_HOSTNAME", t.ConnectionData.Port);
                 Debug.Log("Transport connection data updated.");
+                
+                StartConnection(false);
             }
         }
 
