@@ -73,6 +73,7 @@ namespace Network_Discovery
 
         private UdpClient _client;
         private CancellationTokenSource _cancellationTokenSource;
+        private Coroutine _broadcastCR;
         private Coroutine _networkReachabilityCheckCR;
         private NetworkReachability _lastReachability;
 
@@ -100,8 +101,6 @@ namespace Network_Discovery
         /// </summary>
         public ushort Port => port;
         
-        private Coroutine _broadcastCR;
-
         #endregion
 
         #region Private Enum
@@ -530,13 +529,17 @@ namespace Network_Discovery
         private void HandleNetworkChange()
         {
             Debug.Log($"Network state changed to: {_lastReachability}");
-        
-            if (transport != null)
+            StartCoroutine(DelayCR());
+
+            IEnumerator DelayCR()
             {
-                transport.SetConnectionData("NEW_IP_OR_HOSTNAME", transport.ConnectionData.Port);
-                Debug.Log("Transport connection data updated.");
+                if (transport)
+                {
+                    transport.SetConnectionData("NEW_IP_OR_HOSTNAME", transport.ConnectionData.Port);
+                    Debug.Log("Transport connection data updated.");
                 
-                StartConnection();
+                    StartConnection();
+                }
             }
         }
 
