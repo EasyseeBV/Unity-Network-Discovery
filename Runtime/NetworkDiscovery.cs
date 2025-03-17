@@ -166,6 +166,7 @@ namespace Network_Discovery
         /// </summary>
         private void StartConnection()
         {
+            if (_lastReachability == NetworkReachability.NotReachable) return;
             if (_broadcastCR != null) StopCoroutine(_broadcastCR);
             _broadcastCR = StartCoroutine(StartConnectionCR());
 
@@ -543,7 +544,7 @@ namespace Network_Discovery
                     transport.SetConnectionData("NEW_IP_OR_HOSTNAME", transport.ConnectionData.Port);
                     Debug.Log("Transport connection data updated.");
 
-                    if (_lastReachability != NetworkReachability.NotReachable) StartConnection();
+                    StartConnection();
                 }
             }
         }
