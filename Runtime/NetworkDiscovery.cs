@@ -100,7 +100,7 @@ namespace Network_Discovery
         /// Read-only property to get the configured port.
         /// </summary>
         public ushort Port => port;
-        
+
         #endregion
 
         #region Private Enum
@@ -127,16 +127,18 @@ namespace Network_Discovery
             {
                 StopCoroutine(_networkReachabilityCheckCR);
             }
+
             _networkReachabilityCheckCR = StartCoroutine(NetworkReachabilityCheckCR());
 
             if (Instance != null)
             {
                 Destroy(Instance.gameObject);
             }
+
             Instance = this;
 
             networkManager.OnServerStarted += OnServerStarted;
-            
+
             networkManager.OnServerStopped += HandleConnectionChange;
             networkManager.OnClientStopped += HandleConnectionChange;
         }
@@ -147,13 +149,13 @@ namespace Network_Discovery
             StopDiscovery();
 
             networkManager.OnServerStarted -= OnServerStarted;
-            
+
             networkManager.OnServerStopped -= HandleConnectionChange;
             networkManager.OnClientStopped -= HandleConnectionChange;
         }
 
         private void OnApplicationQuit() => StopDiscovery();
-        
+
         #endregion
 
         #region Connection and Discovery Initiation
@@ -171,13 +173,14 @@ namespace Network_Discovery
             {
                 if (NetworkManager.Singleton && NetworkManager.Singleton.IsListening)
                 {
-                    Debug.Log("[NetworkDiscovery] Network state changed, stopping NetworkManager before reconfiguration.");
+                    Debug.Log(
+                        "[NetworkDiscovery] Network state changed, stopping NetworkManager before reconfiguration.");
                     NetworkManager.Singleton.Shutdown();
                 }
-                
+
                 yield return new WaitUntil(() => !networkManager.ShutdownInProgress);
                 yield return new WaitForSeconds(1f);
-                
+
                 if (role == NetworkRole.Server) HostGame();
                 else StartCoroutine(ClientBroadcastCR());
             }
@@ -313,8 +316,8 @@ namespace Network_Discovery
             IPEndPoint endPoint = new IPEndPoint(IPAddress.Broadcast, port);
 
             using FastBufferWriter writer = new FastBufferWriter(
-                WriterInitialCapacity, 
-                Allocator.Temp, 
+                WriterInitialCapacity,
+                Allocator.Temp,
                 WriterMaxCapacity
             );
             WriteHeader(writer, MessageType.BroadCast);
@@ -403,8 +406,8 @@ namespace Network_Discovery
 
                 reader.ReadNetworkSerializable(out DiscoveryBroadcastData receivedBroadcast);
 
-                if (ProcessBroadcastImpl(udpReceiveResult.RemoteEndPoint, receivedBroadcast, 
-                    out DiscoveryResponseData response))
+                if (ProcessBroadcastImpl(udpReceiveResult.RemoteEndPoint, receivedBroadcast,
+                        out DiscoveryResponseData response))
                 {
                     SendResponse(response, udpReceiveResult.RemoteEndPoint);
                 }
@@ -420,7 +423,8 @@ namespace Network_Discovery
         /// </summary>
         private void SendResponse(DiscoveryResponseData response, IPEndPoint endPoint)
         {
-            using FastBufferWriter writer = new FastBufferWriter(WriterInitialCapacity, Allocator.Temp, WriterMaxCapacity);
+            using FastBufferWriter writer =
+                new FastBufferWriter(WriterInitialCapacity, Allocator.Temp, WriterMaxCapacity);
             WriteHeader(writer, MessageType.Response);
             writer.WriteNetworkSerializable(response);
             byte[] data = writer.ToArray();
@@ -432,8 +436,8 @@ namespace Network_Discovery
         /// Validates the broadcast against the shared key and nonce; prepares a response if valid.
         /// </summary>
         private bool ProcessBroadcastImpl(
-            IPEndPoint sender, 
-            DiscoveryBroadcastData broadCast, 
+            IPEndPoint sender,
+            DiscoveryBroadcastData broadCast,
             out DiscoveryResponseData response
         )
         {
@@ -515,15 +519,16 @@ namespace Network_Discovery
         {
             Debug.Log("Connection state changed.");
             StopAllCoroutines();
-        
+
             if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
             {
                 Debug.Log("[NetworkDiscovery] Stopping NetworkManager before making changes.");
                 NetworkManager.Singleton.Shutdown();
             }
-            
+
             StartConnection();
         }
+
         private void HandleNetworkChange()
         {
             Debug.Log($"Network state changed to: {_lastReachability}");
@@ -532,13 +537,13 @@ namespace Network_Discovery
             IEnumerator DelayCR()
             {
                 yield return new WaitForSeconds(2f);
-                
+
                 if (transport)
                 {
                     transport.SetConnectionData("NEW_IP_OR_HOSTNAME", transport.ConnectionData.Port);
                     Debug.Log("Transport connection data updated.");
-                
-                    StartConnection();
+
+                    if (_lastReachability != NetworkReachability.NotReachable) StartConnection();
                 }
             }
         }
