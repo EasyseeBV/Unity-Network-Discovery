@@ -546,7 +546,6 @@ namespace Network_Discovery
                 NetworkManager.Singleton.Shutdown();
             }
 
-            // Use our helper to get a local IP address instead of "NEW_IP_OR_HOSTNAME"
             StartConnection();
         }
 
@@ -558,7 +557,7 @@ namespace Network_Discovery
             IEnumerator DelayCR()
             {
                 yield return new WaitForSeconds(1f);
-                StartConnection();
+                HandleConnectionChange(true);
             }
         }
 
