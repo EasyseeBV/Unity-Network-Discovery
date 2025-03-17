@@ -99,6 +99,8 @@ namespace Network_Discovery
         /// Read-only property to get the configured port.
         /// </summary>
         public ushort Port => port;
+        
+        private Coroutine _broadcastCR;
 
         #endregion
 
@@ -165,14 +167,20 @@ namespace Network_Discovery
         /// </summary>
         private void StartConnection()
         {
-            StartCoroutine(StartConnectionCR());
+            if (_broadcastCR != null) StopCoroutine(_broadcastCR);
+            _broadcastCR = StartCoroutine(StartConnectionCR());
 
             IEnumerator StartConnectionCR()
             {
-                yield return new WaitForSeconds(0.5f);
-
+                if (NetworkManager.Singleton && NetworkManager.Singleton.IsListening)
+                {
+                    Debug.Log("[NetworkDiscovery] Network state changed, stopping NetworkManager before reconfiguration.");
+                    NetworkManager.Singleton.Shutdown();
+                }
+                
                 yield return new WaitUntil(() => !networkManager.ShutdownInProgress);
-
+                yield return new WaitForSeconds(1f);
+                
                 if (role == NetworkRole.Server) HostGame();
                 else StartCoroutine(ClientBroadcastCR());
             }
@@ -523,25 +531,8 @@ namespace Network_Discovery
         {
             Debug.Log($"Network state changed to: {_lastReachability}");
         
-            if (_lastReachability == NetworkReachability.NotReachable)
-            {
-                if (NetworkManager.Singleton) 
-                {
-                    Debug.Log("[NetworkDiscovery] Network unreachable, stopping NetworkManager.");
-                    NetworkManager.Singleton.Shutdown();
-                }
-            }
-        
             if (transport != null)
             {
-                if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
-                {
-                    Debug.Log("[NetworkDiscovery] Network state changed, stopping NetworkManager before reconfiguration.");
-                    NetworkManager.Singleton.Shutdown();
-                }
-        
-                // It's a good idea to stop ongoing discovery or network operations 
-                // and restart them with any updated connection parameters.
                 transport.SetConnectionData("NEW_IP_OR_HOSTNAME", transport.ConnectionData.Port);
                 Debug.Log("Transport connection data updated.");
                 
