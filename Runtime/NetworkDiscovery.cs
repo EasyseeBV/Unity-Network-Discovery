@@ -123,8 +123,6 @@ namespace Network_Discovery
 
         private void OnEnable()
         {
-            StartConnection();
-            
             networkManager.OnServerStarted += OnServerStarted;
 
             networkManager.OnServerStopped += HandleConnectionChange;
@@ -140,6 +138,11 @@ namespace Network_Discovery
 
             networkManager.OnServerStopped -= HandleConnectionChange;
             networkManager.OnClientStopped -= HandleConnectionChange;
+        }
+
+        private void Start()
+        {
+            StartConnection();
         }
 
         private void OnApplicationQuit() => StopDiscovery();
@@ -163,19 +166,11 @@ namespace Network_Discovery
             StopAllCoroutines();
             
             // Restart connection
-            StartCoroutine(NetworkReachabilityCheckCR());
             StartCoroutine(StartConnectionCR());
+            StartCoroutine(NetworkReachabilityCheckCR());
 
             IEnumerator StartConnectionCR()
             {
-                if (NetworkManager.Singleton && NetworkManager.Singleton.IsListening)
-                {
-                    Debug.Log(
-                        "[NetworkDiscovery] Network state changed, stopping NetworkManager before reconfiguration.");
-                    NetworkManager.Singleton.Shutdown();
-                }
-
-                yield return new WaitUntil(() => !networkManager.ShutdownInProgress);
                 yield return new WaitForSeconds(1f);
 
                 if (role == NetworkRole.Server) HostGame();
@@ -191,8 +186,8 @@ namespace Network_Discovery
             // Retrieve the local IP to bind as the host IP
             var localIp = GetLocalIPAddress();
 
-            Debug.Log($"[LocalNetworkDiscovery] Hosting on IP: {localIp}, Port: {transport.ConnectionData.Port}");
             transport.SetConnectionData(localIp, transport.ConnectionData.Port);
+            Debug.Log($"[LocalNetworkDiscovery] Hosting on IP: {localIp}, Port: {transport.ConnectionData.Port}");
             networkManager.StartServer();
         }
 
