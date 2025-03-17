@@ -213,7 +213,8 @@ namespace Network_Discovery
         /// </summary>
         private void OnServerStarted()
         {
-            StartCoroutine(StartDiscovery(true, serverBroadcastDelay));
+            if (_broadcastCR != null) StopCoroutine(_broadcastCR);
+            _broadcastCR = StartCoroutine(StartDiscovery(true, serverBroadcastDelay));
         }
 
         #endregion
