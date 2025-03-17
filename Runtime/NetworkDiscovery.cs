@@ -166,8 +166,8 @@ namespace Network_Discovery
         /// </summary>
         private void StartConnection()
         {
-            if (_lastReachability == NetworkReachability.NotReachable) return;
             if (_broadcastCR != null) StopCoroutine(_broadcastCR);
+            if (_lastReachability == NetworkReachability.NotReachable) return;
             _broadcastCR = StartCoroutine(StartConnectionCR());
 
             IEnumerator StartConnectionCR()
@@ -519,7 +519,7 @@ namespace Network_Discovery
         private void HandleConnectionChange(bool cleanChange)
         {
             Debug.Log("Connection state changed.");
-            StopAllCoroutines();
+            if (_broadcastCR != null) StopCoroutine(_broadcastCR);
 
             if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
             {
