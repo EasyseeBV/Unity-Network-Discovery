@@ -116,9 +116,6 @@ namespace Network_Discovery
         {
             if (!transport) transport = FindFirstObjectByType<UnityTransport>();
             if (!networkManager) networkManager = FindFirstObjectByType<NetworkManager>();
-            
-            // Init value
-            _lastReachability = Application.internetReachability;
         }
 
         private void OnEnable()
@@ -140,10 +137,7 @@ namespace Network_Discovery
             networkManager.OnClientStopped -= HandleConnectionChange;
         }
 
-        private void Start()
-        {
-            StartConnection();
-        }
+        private void Start() => StartConnection();
 
         private void OnApplicationQuit() => StopDiscovery();
 
@@ -166,17 +160,12 @@ namespace Network_Discovery
             StopAllCoroutines();
             
             // Restart connection
+            _lastReachability = Application.internetReachability;
             StartCoroutine(NetworkReachabilityCheckCR());
             if (_lastReachability == NetworkReachability.NotReachable) return;
-            StartCoroutine(StartConnectionCR());
-
-            IEnumerator StartConnectionCR()
-            {
-                yield return new WaitForSeconds(1f);
-
-                if (role == NetworkRole.Server) HostGame();
-                else StartCoroutine(ClientBroadcastCR());
-            }
+            
+            if (role == NetworkRole.Server) HostGame();
+            else StartCoroutine(ClientBroadcastCR());
         }
 
         /// <summary>
@@ -191,11 +180,7 @@ namespace Network_Discovery
             Debug.Log($"[LocalNetworkDiscovery] Hosting on IP: {localIp}, Port: {transport.ConnectionData.Port}");
             networkManager.StartServer();
         }
-
-        /// <summary>
-        /// Waits a set delay, then repeatedly sends broadcast messages looking for servers,
-        /// stopping only once a server connection is established.
-        /// </summary>
+        
         private IEnumerator ClientBroadcastCR()
         {
             yield return StartCoroutine(StartDiscovery(false, clientBroadcastDelay));
@@ -216,10 +201,7 @@ namespace Network_Discovery
         /// <summary>
         /// Once the server is running, start the discovery broadcast with a delay.
         /// </summary>
-        private void OnServerStarted()
-        {
-            StartCoroutine(StartDiscovery(true, serverBroadcastDelay));
-        }
+        private void OnServerStarted() => StartCoroutine(StartDiscovery(true, serverBroadcastDelay));
 
         #endregion
 
