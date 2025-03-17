@@ -68,12 +68,12 @@ namespace Network_Discovery
 
         #region Internal Fields
 
+        private static NetworkDiscovery Instance { get; set; }
         private readonly NonceManager nonceManager = new();
 
         private UdpClient _client;
         private CancellationTokenSource _cancellationTokenSource;
         private Coroutine _networkReachabilityCheckCR;
-        private Coroutine _broadcastCR;
         private NetworkReachability _lastReachability;
 
         #endregion
@@ -128,6 +128,12 @@ namespace Network_Discovery
             }
             _networkReachabilityCheckCR = StartCoroutine(NetworkReachabilityCheckCR());
 
+            if (Instance != null)
+            {
+                Destroy(Instance.gameObject);
+            }
+            Instance = this;
+
             networkManager.OnServerStarted += OnServerStarted;
             
             networkManager.OnServerStopped += HandleConnectionChange;
@@ -159,8 +165,7 @@ namespace Network_Discovery
         /// </summary>
         private void StartConnection()
         {
-            if (_broadcastCR != null) StopCoroutine(_broadcastCR);
-            _broadcastCR = StartCoroutine(StartConnectionCR());
+            StartCoroutine(StartConnectionCR());
 
             IEnumerator StartConnectionCR()
             {
@@ -494,7 +499,7 @@ namespace Network_Discovery
                 if (currentReachability != _lastReachability)
                 {
                     _lastReachability = currentReachability;
-                    HandleNetworkChange();
+                    //HandleNetworkChange();
                 }
 
                 yield return new WaitForSeconds(3f);
@@ -504,6 +509,7 @@ namespace Network_Discovery
         private void HandleConnectionChange(bool cleanChange)
         {
             Debug.Log("Connection state changed.");
+            StopAllCoroutines();
         
             if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
             {
