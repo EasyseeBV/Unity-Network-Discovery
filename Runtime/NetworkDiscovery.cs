@@ -345,13 +345,12 @@ namespace Network_Discovery
                 }
                 catch
                 {
-                    // Intentionally ignore any exceptions during disposal
+                    // Intentionally ignored
                 }
 
                 _client = null;
             }
         }
-
 
         /// <summary>
         /// Broadcasts a message to discover servers. Only works if currently in client mode.
@@ -465,10 +464,9 @@ namespace Network_Discovery
         /// <summary>
         /// Receiving broadcasts when in server mode: read data, process, and possibly respond.
         /// </summary>
-        public async Task ReceiveBroadcastAsync()
+        private async Task ReceiveBroadcastAsync()
         {
-            if (_client == null)
-                return;
+            if (_client == null) return;
 
             UdpReceiveResult udpReceiveResult;
             try
@@ -496,7 +494,8 @@ namespace Network_Discovery
 
                 reader.ReadNetworkSerializable(out DiscoveryBroadcastData receivedBroadcast);
 
-                if (ProcessBroadcastImpl(udpReceiveResult.RemoteEndPoint, receivedBroadcast, out DiscoveryResponseData response))
+                if (ProcessBroadcastImpl(udpReceiveResult.RemoteEndPoint, receivedBroadcast,
+                    out DiscoveryResponseData response))
                 {
                     SendResponse(response, udpReceiveResult.RemoteEndPoint);
                 }
@@ -506,7 +505,6 @@ namespace Network_Discovery
                 Debug.LogError($"[NetworkDiscovery] Failed to receive broadcast: {e}");
             }
         }
-
 
         /// <summary>
         /// Sends a response from the server to the client upon successful broadcast processing.
