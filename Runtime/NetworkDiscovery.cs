@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -12,125 +13,254 @@ using UnityEngine;
 namespace Network_Discovery
 {
     /// <summary>
-    /// Provides functionality for discovering network hosts and clients within the local network.
-    /// Designed to be extended for customizing broadcasting and discovery protocols.
+    /// Manages local network discovery for both client and server.
+    /// Includes sending and receiving broadcasts, filtering by authentication key,
+    /// and handling network connectivity changes.
     /// </summary>
-    /// <typeparam name="TBroadCast">
-    ///   The type of the object containing broadcasting data.
-    ///   Must implement INetworkSerializable.
-    /// </typeparam>
-    /// <typeparam name="TResponse">
-    ///   The type of the object containing responses to broadcasts.
-    ///   Must implement INetworkSerializable.
-    /// </typeparam>
-    [DisallowMultipleComponent]
-    public abstract class NetworkDiscovery<TBroadCast, TResponse> : MonoBehaviour
-        where TBroadCast : INetworkSerializable, new()
-        where TResponse : INetworkSerializable, new()
+    public class NetworkDiscovery : MonoBehaviour
     {
+        #region Constants
+
         private const int WriterInitialCapacity = 1024;
         private const int WriterMaxCapacity = 64 * 1024;
 
-        [SerializeField, Tooltip("The port used for broadcasting.")]
+        #endregion
+
+        #region Configurable Fields
+
+        [Header("Network Role")]
+        [Tooltip("Specifies the role of the network (Server or Client).")]
+        public NetworkRole role = NetworkRole.Server;
+
+        [Header("Timing")]
+        [Tooltip("Interval in seconds at which clients will ping the local network.")]
+        [SerializeField]
+        private float clientBroadcastPingInterval = 3f;
+
+        [Tooltip("Delay after server-start that server broadcasts its presence.")]
+        [SerializeField]
+        private float serverBroadcastDelay = 3f;
+
+        [Tooltip("Delay after start that client broadcasts, looking for servers.")]
+        [SerializeField]
+        private float clientBroadcastDelay = 3f;
+
+        [Header("References")]
+        [Tooltip("NetworkManager controlling the netcode behavior.")]
+        [SerializeField]
+        private NetworkManager networkManager;
+
+        [Tooltip("UTP transport layer for netcode communication.")]
+        [SerializeField]
+        private UnityTransport transport;
+
+        [Header("Authentication")]
+        [Tooltip("A shared secret key. Must match on both client and server.")]
+        [SerializeField, TextArea(1, 6)]
+        private string sharedKey = "mySecretKey";
+
+        [Header("Broadcast Port")]
+        [Tooltip("The port used for sending/receiving network discovery broadcasts.")]
+        [SerializeField]
         private ushort port = 47777;
+
+        #endregion
+
+        #region Internal Fields
+
+        private static NetworkDiscovery Instance { get; set; }
+        private readonly NonceManager nonceManager = new();
 
         private UdpClient _client;
         private CancellationTokenSource _cancellationTokenSource;
+        private Coroutine _networkReachabilityCheckCR;
+        private NetworkReachability _lastReachability;
+
+        #endregion
+
+        #region State Properties
 
         /// <summary>
-        /// Indicates whether discovery is running.
+        /// Indicates whether discovery is currently running.
         /// </summary>
         public bool IsRunning { get; private set; }
 
         /// <summary>
-        /// Indicates whether this discovery is in server mode.
+        /// Indicates whether this instance is running in server mode.
         /// </summary>
         public bool IsServer { get; private set; }
 
         /// <summary>
-        /// Indicates whether this discovery is in client mode.
+        /// Indicates whether this instance is running in client mode.
         /// </summary>
         public bool IsClient { get; private set; }
 
         /// <summary>
-        /// The port used for sending/receiving broadcasts.
+        /// Read-only property to get the configured port.
         /// </summary>
         public ushort Port => port;
-        
-        private Coroutine _networkReachabilityCheckCR;
-        private NetworkReachability _lastReachability;
+
+        #endregion
+
+        #region Private Enum
 
         private enum MessageType : byte
         {
             BroadCast = 0,
-            Response = 1,
+            Response = 1
         }
 
-        #region Unity Callbacks
+        #endregion
 
-        protected virtual void OnEnable()
+        #region Unity Lifecycle
+
+        private void Awake()
+        {
+            if (!transport) transport = FindFirstObjectByType<UnityTransport>();
+            if (!networkManager) networkManager = FindFirstObjectByType<NetworkManager>();
+        }
+
+        private void OnEnable()
         {
             if (_networkReachabilityCheckCR != null)
             {
                 StopCoroutine(_networkReachabilityCheckCR);
             }
-            
             _networkReachabilityCheckCR = StartCoroutine(NetworkReachabilityCheckCR());
+
+            if (Instance != null)
+            {
+                Destroy(Instance.gameObject);
+            }
+            Instance = this;
+
+            networkManager.OnServerStarted += OnServerStarted;
+            networkManager.OnServerStopped += StartConnection;
+            networkManager.OnClientStopped += StartConnection;
         }
 
-        protected virtual void OnDisable()
+        private void OnDisable()
         {
             StopAllCoroutines();
             StopDiscovery();
-        } 
 
-        protected virtual void OnApplicationQuit() => StopDiscovery();
+            networkManager.OnServerStarted -= OnServerStarted;
+            networkManager.OnServerStopped -= StartConnection;
+            networkManager.OnClientStopped -= StartConnection;
+        }
 
-        #endregion
-
-        #region Abstract Methods
-
-        /// <summary>
-        /// Processes a received broadcast message. If a response is needed, return true
-        /// and provide the response data via the out parameter.
-        /// </summary>
-        protected abstract bool ProcessBroadcast(IPEndPoint sender, TBroadCast broadCast, out TResponse response);
-
-        /// <summary>
-        /// Called when a discovery response is received (client mode).
-        /// </summary>
-        protected abstract void ResponseReceived(IPEndPoint sender, TResponse response);
-
-        #endregion
-
-        #region Public/Protected Methods
-
-        /// <summary>
-        /// Begins the discovery process in either server or client mode.
-        /// This sets up the UDP client and starts listening for broadcasts or responses.
-        /// It does not repeatedly send broadcasts automatically (you can do that in the derived class).
-        /// </summary>
-        protected IEnumerator StartDiscovery(bool serverMode, float initialDelay = 0f)
+        private void OnApplicationQuit()
         {
-            StopDiscovery(); // Make sure we aren't already running
+            StopDiscovery();
+        }
+
+        private void Start()
+        {
+            StartConnection(true);
+        }
+
+        #endregion
+
+        #region Connection and Discovery Initiation
+
+        /// <summary>
+        /// Initiates the network connection routine (server or client).
+        /// A small delay is used before creating the server or broadcasting as a client.
+        /// </summary>
+        private void StartConnection(bool cleanShutdown)
+        {
+            StartCoroutine(StartConnectionCR());
+
+            IEnumerator StartConnectionCR()
+            {
+                yield return new WaitForSeconds(0.5f);
+
+                if (networkManager.ShutdownInProgress)
+                {
+                    yield break;
+                }
+
+                if (role == NetworkRole.Server)
+                {
+                    HostGame();
+                }
+                else
+                {
+                    StartCoroutine(ClientBroadcastCR());
+                }
+            }
+        }
+
+        /// <summary>
+        /// Sets up the host's IP address and port, then starts the server.
+        /// </summary>
+        private void HostGame()
+        {
+            var localIp = Dns.GetHostEntry(Dns.GetHostName())
+                .AddressList
+                .First(a => a.AddressFamily == AddressFamily.InterNetwork)
+                .ToString();
+
+            Debug.Log($"[LocalNetworkDiscovery] Hosting on IP: {localIp}, Port: {transport.ConnectionData.Port}");
+            transport.SetConnectionData(localIp, transport.ConnectionData.Port);
+            networkManager.StartServer();
+        }
+
+        /// <summary>
+        /// Waits a set delay, then repeatedly sends broadcast messages looking for servers,
+        /// stopping only once a server connection is established.
+        /// </summary>
+        private IEnumerator ClientBroadcastCR()
+        {
+            yield return StartCoroutine(StartDiscovery(false, clientBroadcastDelay));
+
+            WaitForSeconds wait = new WaitForSeconds(clientBroadcastPingInterval);
+
+            while (!networkManager.IsConnectedClient)
+            {
+                Debug.Log("[LocalNetworkDiscovery] Sending client broadcast...");
+                ClientBroadcast(new DiscoveryBroadcastData(sharedKey));
+                yield return wait;
+            }
+
+            StopDiscovery();
+            Debug.Log("[LocalNetworkDiscovery] Found server, stopped discovery.");
+        }
+
+        /// <summary>
+        /// Once the server is running, start the discovery broadcast with a delay.
+        /// </summary>
+        private void OnServerStarted()
+        {
+            StartCoroutine(StartDiscovery(true, serverBroadcastDelay));
+        }
+
+        #endregion
+
+        #region Discovery Logic
+
+        /// <summary>
+        /// Starts discovery in server mode or client mode, setting up UDP,
+        /// beginning asynchronous listening for broadcasts or responses.
+        /// </summary>
+        private IEnumerator StartDiscovery(bool serverMode, float initialDelay = 0f)
+        {
+            StopDiscovery(); // Ensure we're not already running
 
             IsServer = serverMode;
             IsClient = !serverMode;
 
-            // Optionally wait a bit before actually starting
             yield return new WaitForSeconds(initialDelay);
 
             _cancellationTokenSource = new CancellationTokenSource();
 
-            // If server: bind to 'port' (listening for broadcasts).
-            // If client: bind to 0 (auto-select port).
+            // Server binds to the specified port; client binds to 0 (auto-select).
             _client = new UdpClient(serverMode ? port : 0)
             {
                 EnableBroadcast = true,
                 MulticastLoopback = false
             };
 
-            // Start listening for either broadcasts (server mode) or responses (client mode)
             _ = ListenAsync(
                 _cancellationTokenSource.Token,
                 serverMode ? ReceiveBroadcastAsync : ReceiveResponseAsync
@@ -141,14 +271,14 @@ namespace Network_Discovery
         }
 
         /// <summary>
-        /// Stops the discovery process, closes the UDP client, and cancels any listening tasks.
+        /// Ends discovery, shutting down the UDP client and canceling the async listener.
         /// </summary>
-        protected void StopDiscovery()
+        private void StopDiscovery()
         {
             if (!IsRunning && _client == null && _cancellationTokenSource == null)
-                return; // Already stopped
-
-            //Debug.Log("[NetworkDiscovery] Stopping discovery.");
+            {
+                return;
+            }
 
             IsRunning = false;
             IsServer = false;
@@ -169,7 +299,7 @@ namespace Network_Discovery
                 }
                 catch
                 {
-                    /* ignored */
+                    // Ignored
                 }
 
                 _client = null;
@@ -177,18 +307,24 @@ namespace Network_Discovery
         }
 
         /// <summary>
-        /// Send a broadcast from the client. If not in client mode, this throws an exception.
+        /// Broadcasts a message to discover servers. Only works if currently in client mode.
         /// </summary>
-        protected void ClientBroadcast(TBroadCast broadCast)
+        private void ClientBroadcast(DiscoveryBroadcastData broadCast)
         {
             if (!IsClient)
+            {
                 throw new InvalidOperationException(
-                    "Cannot send client broadcast while not running in client mode. Call StartClient first."
+                    "Cannot send client broadcast while not running in client mode."
                 );
+            }
 
             IPEndPoint endPoint = new IPEndPoint(IPAddress.Broadcast, port);
 
-            using FastBufferWriter writer = new FastBufferWriter(WriterInitialCapacity, Allocator.Temp, WriterMaxCapacity);
+            using FastBufferWriter writer = new FastBufferWriter(
+                WriterInitialCapacity, 
+                Allocator.Temp, 
+                WriterMaxCapacity
+            );
             WriteHeader(writer, MessageType.BroadCast);
             writer.WriteNetworkSerializable(broadCast);
             byte[] data = writer.ToArray();
@@ -198,11 +334,13 @@ namespace Network_Discovery
 
         #endregion
 
-        #region Internal Async Methods
+        #region Handling Incoming Messages
 
+        /// <summary>
+        /// Listens for incoming broadcasts or responses until canceled.
+        /// </summary>
         private async Task ListenAsync(CancellationToken token, Func<Task> onReceiveTask)
         {
-            // Continuously receive data until canceled
             while (!token.IsCancellationRequested)
             {
                 try
@@ -225,22 +363,26 @@ namespace Network_Discovery
         }
 
         /// <summary>
-        /// If in client mode, we wait for a response from the server.
+        /// Receiving responses when in client mode: read data, parse, and handle.
         /// </summary>
         private async Task ReceiveResponseAsync()
         {
             UdpReceiveResult udpReceiveResult = await _client.ReceiveAsync();
-            var segment = new ArraySegment<byte>(udpReceiveResult.Buffer, 0, udpReceiveResult.Buffer.Length);
+            var segment = new ArraySegment<byte>(
+                udpReceiveResult.Buffer, 0, udpReceiveResult.Buffer.Length
+            );
 
             using var reader = new FastBufferReader(segment, Allocator.Persistent);
 
             try
             {
                 if (!ReadAndCheckHeader(reader, MessageType.Response))
+                {
                     return;
+                }
 
-                reader.ReadNetworkSerializable(out TResponse receivedResponse);
-                ResponseReceived(udpReceiveResult.RemoteEndPoint, receivedResponse);
+                reader.ReadNetworkSerializable(out DiscoveryResponseData receivedResponse);
+                ResponseReceivedImpl(udpReceiveResult.RemoteEndPoint, receivedResponse);
             }
             catch (Exception e)
             {
@@ -249,24 +391,31 @@ namespace Network_Discovery
         }
 
         /// <summary>
-        /// If in server mode, we wait for a broadcast from clients and optionally respond.
+        /// Receiving broadcasts when in server mode: read data, process, and possibly respond.
         /// </summary>
         private async Task ReceiveBroadcastAsync()
         {
             UdpReceiveResult udpReceiveResult = await _client.ReceiveAsync();
-            var segment = new ArraySegment<byte>(udpReceiveResult.Buffer, 0, udpReceiveResult.Buffer.Length);
+            var segment = new ArraySegment<byte>(
+                udpReceiveResult.Buffer, 0, udpReceiveResult.Buffer.Length
+            );
 
             using var reader = new FastBufferReader(segment, Allocator.Persistent);
 
             try
             {
                 if (!ReadAndCheckHeader(reader, MessageType.BroadCast))
+                {
                     return;
+                }
 
-                reader.ReadNetworkSerializable(out TBroadCast receivedBroadcast);
+                reader.ReadNetworkSerializable(out DiscoveryBroadcastData receivedBroadcast);
 
-                if (ProcessBroadcast(udpReceiveResult.RemoteEndPoint, receivedBroadcast, out TResponse response))
+                if (ProcessBroadcastImpl(udpReceiveResult.RemoteEndPoint, receivedBroadcast, 
+                    out DiscoveryResponseData response))
+                {
                     SendResponse(response, udpReceiveResult.RemoteEndPoint);
+                }
             }
             catch (Exception e)
             {
@@ -274,7 +423,10 @@ namespace Network_Discovery
             }
         }
 
-        private void SendResponse(TResponse response, IPEndPoint endPoint)
+        /// <summary>
+        /// Sends a response from server to client upon successful broadcast processing.
+        /// </summary>
+        private void SendResponse(DiscoveryResponseData response, IPEndPoint endPoint)
         {
             using FastBufferWriter writer = new FastBufferWriter(WriterInitialCapacity, Allocator.Temp, WriterMaxCapacity);
             WriteHeader(writer, MessageType.Response);
@@ -283,6 +435,59 @@ namespace Network_Discovery
 
             _client?.SendAsync(data, data.Length, endPoint);
         }
+
+        /// <summary>
+        /// Validates the broadcast against the shared key and nonce; prepares a response if valid.
+        /// </summary>
+        private bool ProcessBroadcastImpl(
+            IPEndPoint sender, 
+            DiscoveryBroadcastData broadCast, 
+            out DiscoveryResponseData response
+        )
+        {
+            string expectedHash = NetworkUtils.HashKey(sharedKey);
+
+            if (broadCast.AuthTokenHash != expectedHash)
+            {
+                Debug.Log("[Authentication] Invalid key, ignoring client broadcast.");
+                response = default;
+                return false;
+            }
+
+            if (!nonceManager.ValidateAndStoreNonce(broadCast.Nonce, broadCast.Timestamp))
+            {
+                Debug.Log("[Authentication] Nonce/timestamp check failed, ignoring client broadcast.");
+                response = default;
+                return false;
+            }
+
+            // Build a valid response for client
+            response = new DiscoveryResponseData(sharedKey, transport.ConnectionData.Port);
+            return true;
+        }
+
+        /// <summary>
+        /// Handles a valid response from a server once broadcast is picked up.
+        /// Validates the server's authenticity, then connects the client.
+        /// </summary>
+        private void ResponseReceivedImpl(IPEndPoint sender, DiscoveryResponseData response)
+        {
+            string expectedHash = NetworkUtils.HashKey(sharedKey);
+
+            if (response.AuthTokenHash != expectedHash)
+            {
+                Debug.Log($"[Authentication] Invalid server key hash from {sender}, ignoring response.");
+                return;
+            }
+
+            // Normal connection process
+            transport.SetConnectionData(sender.Address.ToString(), response.Port);
+            networkManager.StartClient();
+        }
+
+        #endregion
+
+        #region Helper Methods
 
         private void WriteHeader(FastBufferWriter writer, MessageType type)
         {
@@ -296,7 +501,9 @@ namespace Network_Discovery
         }
 
         #endregion
-        
+
+        #region Network Change Monitoring
+
         private IEnumerator NetworkReachabilityCheckCR()
         {
             while (true)
@@ -318,21 +525,22 @@ namespace Network_Discovery
 
             if (_lastReachability == NetworkReachability.NotReachable)
             {
-                if (NetworkManager.Singleton) NetworkManager.Singleton.Shutdown();
+                if (NetworkManager.Singleton) 
+                {
+                    NetworkManager.Singleton.Shutdown();
+                }
             }
 
-            // Here you can update your connection parameters,
-            // for example prompting UnityTransport to update its connection data.
-            UnityTransport transport = FindObjectOfType<UnityTransport>();
-            if (transport != null)
+            UnityTransport t = FindObjectOfType<UnityTransport>();
+            if (t != null)
             {
-                // It's a good idea to stop any ongoing discovery or network operations
-                // and restart them with the new connection parameters.
-                transport.SetConnectionData("NEW_IP_OR_HOSTNAME", transport.ConnectionData.Port);
+                // It's a good idea to stop ongoing discovery or network operations 
+                // and restart them with any updated connection parameters.
+                t.SetConnectionData("NEW_IP_OR_HOSTNAME", t.ConnectionData.Port);
                 Debug.Log("Transport connection data updated.");
             }
-
-            
         }
+
+        #endregion
     }
 }
