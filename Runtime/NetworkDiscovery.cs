@@ -168,6 +168,7 @@ namespace Network_Discovery
         {
             if (_broadcastCR != null) StopCoroutine(_broadcastCR);
             if (_lastReachability == NetworkReachability.NotReachable) return;
+
             _broadcastCR = StartCoroutine(StartConnectionCR());
 
             IEnumerator StartConnectionCR()
@@ -192,10 +193,8 @@ namespace Network_Discovery
         /// </summary>
         private void HostGame()
         {
-            var localIp = Dns.GetHostEntry(Dns.GetHostName())
-                .AddressList
-                .First(a => a.AddressFamily == AddressFamily.InterNetwork)
-                .ToString();
+            // Retrieve the local IP to bind as the host IP
+            var localIp = GetLocalIPAddress();
 
             Debug.Log($"[LocalNetworkDiscovery] Hosting on IP: {localIp}, Port: {transport.ConnectionData.Port}");
             transport.SetConnectionData(localIp, transport.ConnectionData.Port);
@@ -378,7 +377,7 @@ namespace Network_Discovery
                 }
 
                 reader.ReadNetworkSerializable(out DiscoveryResponseData receivedResponse);
-                ResponseReceivedImpl(udpReceiveResult.RemoteEndPoint, receivedResponse);
+                ResponseReceived(udpReceiveResult.RemoteEndPoint, receivedResponse);
             }
             catch (Exception e)
             {
@@ -467,7 +466,7 @@ namespace Network_Discovery
         /// Handles a valid response from a server once broadcast is picked up.
         /// Validates the server's authenticity, then connects the client.
         /// </summary>
-        private void ResponseReceivedImpl(IPEndPoint sender, DiscoveryResponseData response)
+        private void ResponseReceived(IPEndPoint sender, DiscoveryResponseData response)
         {
             string expectedHash = NetworkUtils.HashKey(sharedKey);
 
@@ -485,6 +484,26 @@ namespace Network_Discovery
         #endregion
 
         #region Helper Methods
+
+        /// <summary>
+        /// Retrieve the local IPv4 address (non-loopback) of the current machine.
+        /// </summary>
+        private string GetLocalIPAddress()
+        {
+            var host = Dns.GetHostEntry(Dns.GetHostName());
+            var ip = host
+                .AddressList
+                .FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork);
+
+            if (ip == null)
+            {
+                // Fallback or error handling
+                Debug.LogWarning("[NetworkDiscovery] Could not find a valid IPv4 address, defaulting to localhost.");
+                return "127.0.0.1";
+            }
+
+            return ip.ToString();
+        }
 
         private void WriteHeader(FastBufferWriter writer, MessageType type)
         {
@@ -527,6 +546,7 @@ namespace Network_Discovery
                 NetworkManager.Singleton.Shutdown();
             }
 
+            // Use our helper to get a local IP address instead of "NEW_IP_OR_HOSTNAME"
             StartConnection();
         }
 
@@ -537,15 +557,8 @@ namespace Network_Discovery
 
             IEnumerator DelayCR()
             {
-                yield return new WaitForSeconds(2f);
-
-                if (transport)
-                {
-                    transport.SetConnectionData("NEW_IP_OR_HOSTNAME", transport.ConnectionData.Port);
-                    Debug.Log("Transport connection data updated.");
-
-                    StartConnection();
-                }
+                yield return new WaitForSeconds(1f);
+                StartConnection();
             }
         }
 
