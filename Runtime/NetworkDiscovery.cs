@@ -135,6 +135,9 @@ namespace Network_Discovery
             Instance = this;
 
             networkManager.OnServerStarted += OnServerStarted;
+            
+            networkManager.OnServerStopped += HandleConnectionChange;
+            networkManager.OnClientStopped += HandleConnectionChange;
         }
 
         private void OnDisable()
@@ -143,16 +146,14 @@ namespace Network_Discovery
             StopDiscovery();
 
             networkManager.OnServerStarted -= OnServerStarted;
-            networkManager.OnServerStopped -= StartConnection;
-            networkManager.OnClientStopped -= StartConnection;
+            
+            networkManager.OnServerStopped -= HandleConnectionChange;
+            networkManager.OnClientStopped -= HandleConnectionChange;
         }
 
-        private void OnApplicationQuit()
-        {
-            StopDiscovery();
-        }
+        private void OnApplicationQuit() => StopDiscovery();
 
-        private void Start() => StartConnection(true);
+        private void Start() => StartConnection();
 
         #endregion
 
@@ -162,7 +163,7 @@ namespace Network_Discovery
         /// Initiates the network connection routine (server or client).
         /// A small delay is used before creating the server or broadcasting as a client.
         /// </summary>
-        private void StartConnection(bool cleanShutdown)
+        private void StartConnection()
         {
             StartCoroutine(StartConnectionCR());
 
@@ -498,34 +499,53 @@ namespace Network_Discovery
                 if (currentReachability != _lastReachability)
                 {
                     _lastReachability = currentReachability;
-                    HandleNetworkChange();
+                    //HandleNetworkChange();
                 }
 
                 yield return new WaitForSeconds(3f);
             }
         }
 
+        private void HandleConnectionChange(bool cleanChange)
+        {
+            Debug.Log("Connection state changed.");
+            StopAllCoroutines();
+        
+            if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
+            {
+                Debug.Log("[NetworkDiscovery] Stopping NetworkManager before making changes.");
+                NetworkManager.Singleton.Shutdown();
+            }
+            
+            StartConnection();
+        }
         private void HandleNetworkChange()
         {
             Debug.Log($"Network state changed to: {_lastReachability}");
-
+        
             if (_lastReachability == NetworkReachability.NotReachable)
             {
                 if (NetworkManager.Singleton) 
                 {
+                    Debug.Log("[NetworkDiscovery] Network unreachable, stopping NetworkManager.");
                     NetworkManager.Singleton.Shutdown();
                 }
             }
-
-            UnityTransport t = FindObjectOfType<UnityTransport>();
-            if (t != null)
+        
+            if (transport != null)
             {
+                if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
+                {
+                    Debug.Log("[NetworkDiscovery] Network state changed, stopping NetworkManager before reconfiguration.");
+                    NetworkManager.Singleton.Shutdown();
+                }
+        
                 // It's a good idea to stop ongoing discovery or network operations 
                 // and restart them with any updated connection parameters.
-                t.SetConnectionData("NEW_IP_OR_HOSTNAME", t.ConnectionData.Port);
+                transport.SetConnectionData("NEW_IP_OR_HOSTNAME", transport.ConnectionData.Port);
                 Debug.Log("Transport connection data updated.");
                 
-                StartConnection(false);
+                StartConnection();
             }
         }
 
