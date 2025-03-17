@@ -72,7 +72,6 @@ namespace Network_Discovery
 
         private UdpClient _client;
         private CancellationTokenSource _cancellationTokenSource;
-        private Coroutine _broadcastCR;
         private NetworkReachability _lastReachability;
 
         #endregion
@@ -117,12 +116,15 @@ namespace Network_Discovery
         {
             if (!transport) transport = FindFirstObjectByType<UnityTransport>();
             if (!networkManager) networkManager = FindFirstObjectByType<NetworkManager>();
+            
+            // Init value
+            _lastReachability = Application.internetReachability;
         }
 
         private void OnEnable()
         {
-            StartCoroutine(NetworkReachabilityCheckCR());
-
+            StartConnection();
+            
             networkManager.OnServerStarted += OnServerStarted;
 
             networkManager.OnServerStopped += HandleConnectionChange;
@@ -152,9 +154,16 @@ namespace Network_Discovery
         /// </summary>
         private void StartConnection()
         {
-            if (_broadcastCR != null) StopCoroutine(_broadcastCR);
-            if (_lastReachability == NetworkReachability.NotReachable) return;
-
+            // Stop any ongoing connection.
+            if (NetworkManager.Singleton && NetworkManager.Singleton.IsListening)
+            {
+                Debug.Log("[NetworkDiscovery] Stopping NetworkManager before making changes.");
+                NetworkManager.Singleton.Shutdown();
+            }
+            StopAllCoroutines();
+            
+            // Restart connection
+            StartCoroutine(NetworkReachabilityCheckCR());
             StartCoroutine(StartConnectionCR());
 
             IEnumerator StartConnectionCR()
@@ -170,7 +179,7 @@ namespace Network_Discovery
                 yield return new WaitForSeconds(1f);
 
                 if (role == NetworkRole.Server) HostGame();
-                else _broadcastCR = StartCoroutine(ClientBroadcastCR());
+                else StartCoroutine(ClientBroadcastCR());
             }
         }
 
@@ -213,8 +222,7 @@ namespace Network_Discovery
         /// </summary>
         private void OnServerStarted()
         {
-            if (_broadcastCR != null) StopCoroutine(_broadcastCR);
-            _broadcastCR = StartCoroutine(StartDiscovery(true, serverBroadcastDelay));
+            StartCoroutine(StartDiscovery(true, serverBroadcastDelay));
         }
 
         #endregion
@@ -515,39 +523,14 @@ namespace Network_Discovery
                 if (currentReachability != _lastReachability)
                 {
                     _lastReachability = currentReachability;
-                    HandleNetworkChange();
+                    StartConnection();
                 }
 
                 yield return new WaitForSeconds(3f);
             }
         }
 
-        private void HandleConnectionChange(bool cleanChange = true)
-        {
-            Debug.Log("Connection state changed.");
-            if (_broadcastCR != null) StopCoroutine(_broadcastCR);
-
-            if (NetworkManager.Singleton && NetworkManager.Singleton.IsListening)
-            {
-                Debug.Log("[NetworkDiscovery] Stopping NetworkManager before making changes.");
-                NetworkManager.Singleton.Shutdown();
-            }
-
-            StartConnection();
-        }
-
-        private void HandleNetworkChange()
-        {
-            Debug.Log($"Network state changed to: {_lastReachability}");
-            StartCoroutine(DelayCR());
-
-            IEnumerator DelayCR()
-            {
-                yield return new WaitForSeconds(1f);
-                HandleConnectionChange();
-            }
-        }
-
+        private void HandleConnectionChange(bool cleanChange = true) => StartConnection();
         #endregion
     }
 }
