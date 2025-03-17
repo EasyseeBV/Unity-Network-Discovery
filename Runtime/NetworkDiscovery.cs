@@ -533,6 +533,8 @@ namespace Network_Discovery
 
             IEnumerator DelayCR()
             {
+                yield return new WaitForSeconds(2f);
+                
                 if (transport)
                 {
                     transport.SetConnectionData("NEW_IP_OR_HOSTNAME", transport.ConnectionData.Port);
