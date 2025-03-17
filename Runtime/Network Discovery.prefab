@@ -10,7 +10,6 @@ GameObject:
   m_Component:
   - component: {fileID: 3489737023557785787}
   - component: {fileID: 7029999281609218736}
-  - component: {fileID: 6878417984820769507}
   m_Layer: 0
   m_Name: Network Discovery
   m_TagString: Untagged
@@ -45,29 +44,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d401a7193772a044ba9941209a13080f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  port: 47777
+  role: 1
+  clientBroadcastPingInterval: 8
   serverBroadcastDelay: 3
   clientBroadcastDelay: 1
-  m_Port: 47777
-  m_UniqueApplicationId: 0
-  m_StartWithServer: 1
-  OnServerFound:
-    m_PersistentCalls:
-      m_Calls: []
-  ServerNetworkRole: 2
-  hostIpText: {fileID: 0}
-  clientBroadcastPingInterval: 8
-  _networkDiscoverer: {fileID: 7029999281609218736}
-  _transport: {fileID: 0}
-  forceClient: 0
---- !u!114 &6878417984820769507
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 121616764899102077}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7fcd0b215d1f7eb4984025caa59b37d7, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
+  networkManager: {fileID: 0}
+  transport: {fileID: 0}
+  sharedKey: mySecretKey

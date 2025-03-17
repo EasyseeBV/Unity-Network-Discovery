@@ -316,6 +316,11 @@ namespace Network_Discovery
         {
             Debug.Log($"Network state changed to: {_lastReachability}");
 
+            if (_lastReachability == NetworkReachability.NotReachable)
+            {
+                if (NetworkManager.Singleton) NetworkManager.Singleton.Shutdown();
+            }
+
             // Here you can update your connection parameters,
             // for example prompting UnityTransport to update its connection data.
             UnityTransport transport = FindObjectOfType<UnityTransport>();
@@ -327,8 +332,7 @@ namespace Network_Discovery
                 Debug.Log("Transport connection data updated.");
             }
 
-            // Restart or reinitialize your network discovery (if needed)
-            // This might involve calling your discovery's StopDiscovery/StartClient or StartServer methods.
+            
         }
     }
 }
