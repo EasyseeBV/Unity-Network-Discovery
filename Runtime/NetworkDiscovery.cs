@@ -376,7 +376,7 @@ namespace Network_Discovery
             {
                 _cancellationTokenSource.Cancel();
                 _cancellationTokenSource.Dispose();
-                _cancellationTokenSource = null;a
+                _cancellationTokenSource = null;
             }
     
             IsServer = false;
