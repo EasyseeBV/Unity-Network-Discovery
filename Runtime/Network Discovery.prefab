@@ -44,11 +44,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d401a7193772a044ba9941209a13080f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  port: 47777
   role: 1
-  clientBroadcastPingInterval: 8
+  clientBroadcastPingInterval: 2
   serverBroadcastDelay: 3
   clientBroadcastDelay: 1
   networkManager: {fileID: 0}
   transport: {fileID: 0}
   sharedKey: mySecretKey
+  port: 47777
+  enableClientRegistry: 1
