@@ -32,7 +32,7 @@ namespace Network_Discovery
         /// <param name="string">
         /// The MAC address of the client that has been registered or updated.
         /// </param>
-        public static event Action<ulong, string> OnMacAddressRegistered;
+        public static event Action<ulong, string> OnClientConnectionUpdate;
         
         #region Fields & Properties
 
@@ -353,7 +353,7 @@ namespace Network_Discovery
             // Update the PID-to-MAC mapping
             _pidToMac[clientId] = mac;
             Debug.Log($"Updated client registry: {_clientRegistry[mac]}");
-            OnMacAddressRegistered?.Invoke(clientId, mac);
+            OnClientConnectionUpdate?.Invoke(clientId, mac);
         }
 
         #endregion
