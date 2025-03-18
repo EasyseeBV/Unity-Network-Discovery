@@ -26,7 +26,8 @@ namespace Network_Discovery
         /// registered or updated in the internal registry. It carries two parameters:
         /// the unique network ID of the client and the MAC address being registered.
         /// </remarks>
-        public static event Action<ulong, string> OnClientConnectionUpdate;
+        public static event Action<ulong, string> OnClientConnection;
+        public static event Action<string> OnClientDisconnection;
 
         #region Fields & Properties
 
@@ -153,6 +154,8 @@ namespace Network_Discovery
                             info.IsConnected = false;
                             info.LastSeenTicks = DateTime.Now.Ticks;
                             _clientRegistry[info.MacAddress] = info;
+                            OnClientDisconnection?.Invoke(info.MacAddress);
+                            
                             Debug.Log($"[ClientRegistry] Updated registry of {info.MacAddress}: {_clientRegistry[info.MacAddress]}");
 #if UNITY_EDITOR
                             // Force-refresh the Editor debug list if desired.
@@ -289,7 +292,7 @@ namespace Network_Discovery
             
             _pidToMac[clientId] = mac;
             Debug.Log($"Updated client registry: {_clientRegistry[mac]}");
-            OnClientConnectionUpdate?.Invoke(clientId, mac);
+            OnClientConnection?.Invoke(clientId, mac);
 
 #if UNITY_EDITOR
             // Refresh the debug list in the Editor
