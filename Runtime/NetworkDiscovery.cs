@@ -17,6 +17,8 @@ namespace Network_Discovery
 {
     public class NetworkDiscovery : MonoBehaviour
     {
+        #region Fields & Properties
+
         public static string SharedKey { get; private set; } = "mySecretKey";
         public static void SetSharedKey(string key) => SharedKey = key;
 
@@ -43,8 +45,7 @@ namespace Network_Discovery
         [SerializeField] private ushort port = 47777;
 
         [Header("Client Registry (Optional)")]
-        [Tooltip(
-            "If true, clients will include their MAC address in broadcasts and the server will maintain a registry.")]
+        [Tooltip("If true, clients will include their MAC address in broadcasts and the server will maintain a registry.")]
         [SerializeField] private bool enableClientRegistry = true;
 
         private readonly NonceManager _nonceManager = new();
@@ -53,16 +54,19 @@ namespace Network_Discovery
         private NetworkReachability _lastReachability;
         private readonly Dictionary<string, ClientInfo> _clientRegistry = new();
 
-        public bool IsRunning { get; private set; }
         public bool IsServer { get; private set; }
         public bool IsClient { get; private set; }
-        public ushort Port => port;
+        private ushort Port => port;
 
         private enum MessageType : byte
         {
             BroadCast = 0,
             Response = 1
         }
+
+        #endregion
+
+        #region Unity Lifecycle Methods
 
         private void Awake()
         {
@@ -78,15 +82,7 @@ namespace Network_Discovery
             networkManager.OnClientStopped += HandleConnectionChange;
         }
 
-        private void OnConnectionEvent(NetworkManager manager, ConnectionEventData data)
-        {
-            if (data.EventType == ConnectionEvent.ClientConnected)
-            {
-                Debug.Log($"A client has connected with PID {data.ClientId}");
-
-                if (data.ClientId == networkManager.LocalClientId) SendMacHandshake();
-            }
-        }
+        private void Start() => StartConnection();
 
         private void OnDisable()
         {
@@ -98,8 +94,32 @@ namespace Network_Discovery
             networkManager.OnClientStopped -= HandleConnectionChange;
         }
 
-        private void Start() => StartConnection();
         private void OnApplicationQuit() => StopDiscovery();
+
+        #endregion
+
+        #region Event & Connection Handlers
+
+        private void OnConnectionEvent(NetworkManager manager, ConnectionEventData data)
+        {
+            if (data.EventType == ConnectionEvent.ClientConnected)
+            {
+                Debug.Log($"A client has connected with PID {data.ClientId}");
+
+                if (data.ClientId == networkManager.LocalClientId)
+                    SendMacHandshake();
+            }
+        }
+
+        private void OnServerStarted()
+        {
+            NetworkManager.Singleton.CustomMessagingManager
+                .RegisterNamedMessageHandler("ClientMacHandshake", OnMacHandshakeMessageReceived);
+
+            StartCoroutine(StartDiscovery(true, serverBroadcastDelay));
+        }
+
+        private void HandleConnectionChange(bool cleanChange = true) => StartConnection();
 
         private void StartConnection()
         {
@@ -114,8 +134,10 @@ namespace Network_Discovery
             StartCoroutine(NetworkReachabilityCheckCR());
             if (_lastReachability == NetworkReachability.NotReachable) return;
 
-            if (role == NetworkRole.Server) HostGame();
-            else StartCoroutine(ClientBroadcastCR());
+            if (role == NetworkRole.Server)
+                HostGame();
+            else
+                StartCoroutine(ClientBroadcastCR());
         }
 
         private void HostGame()
@@ -141,40 +163,9 @@ namespace Network_Discovery
             Debug.Log("[LocalNetworkDiscovery] Found server, stopped discovery.");
         }
 
-        private void OnServerStarted()
-        {
-            NetworkManager.Singleton.CustomMessagingManager
-                .RegisterNamedMessageHandler("ClientMacHandshake", OnMacHandshakeMessageReceived);
+        #endregion
 
-            StartCoroutine(StartDiscovery(true, serverBroadcastDelay));
-        }
-
-        private void RegisterClientMac(ulong clientId, string mac)
-        {
-            if (_clientRegistry.TryGetValue(mac, out ClientInfo info))
-            {
-                string previous = info.CurrentClientId == ulong.MaxValue ? "Unassigned" : info.CurrentClientId.ToString();
-                
-                Debug.Log($"Old network-id for MAC {mac} was {previous}, new id is {clientId}.");
-                info = new ClientInfo(info.MacAddress)
-                {
-                    LastSeenTicks = DateTime.Now.Ticks,
-                    CurrentClientId = clientId
-                };
-                _clientRegistry[mac] = info;
-                Debug.Log($"[ClientRegistry] MAC address recognized from broadcast or previous connection! " +
-                          $"Linked MAC={mac} to PID={clientId}.");
-            }
-            else
-            {
-                var newInfo = new ClientInfo(mac)
-                {
-                    CurrentClientId = clientId
-                };
-                _clientRegistry[mac] = newInfo;
-                Debug.Log($"[ClientRegistry] Registered new MAC={mac} and assigned PID={clientId}.");
-            }
-        }
+        #region Messaging & Handshake
 
         private void OnMacHandshakeMessageReceived(ulong senderClientId, FastBufferReader reader)
         {
@@ -232,6 +223,37 @@ namespace Network_Discovery
             Debug.Log($"{networkManager.LocalClientId} sent handshake message to server with MAC {mac}");
         }
 
+        private void RegisterClientMac(ulong clientId, string mac)
+        {
+            if (_clientRegistry.TryGetValue(mac, out ClientInfo info))
+            {
+                string previous = info.CurrentClientId == ulong.MaxValue ? "Unassigned" : info.CurrentClientId.ToString();
+
+                Debug.Log($"Old network-id for MAC {mac} was {previous}, new id is {clientId}.");
+                info = new ClientInfo(info.MacAddress)
+                {
+                    LastSeenTicks = DateTime.Now.Ticks,
+                    CurrentClientId = clientId
+                };
+                _clientRegistry[mac] = info;
+                Debug.Log($"[ClientRegistry] MAC address recognized from broadcast or previous connection! " +
+                          $"Linked MAC={mac} to PID={clientId}.");
+            }
+            else
+            {
+                var newInfo = new ClientInfo(mac)
+                {
+                    CurrentClientId = clientId
+                };
+                _clientRegistry[mac] = newInfo;
+                Debug.Log($"[ClientRegistry] Registered new MAC={mac} and assigned PID={clientId}.");
+            }
+        }
+
+        #endregion
+
+        #region Network Discovery & Broadcast
+
         private IEnumerator StartDiscovery(bool serverMode, float initialDelay = 0f)
         {
             StopDiscovery();
@@ -245,15 +267,13 @@ namespace Network_Discovery
                 MulticastLoopback = false
             };
             _ = ListenAsync(_cancellationTokenSource.Token, serverMode ? ReceiveBroadcastAsync : ReceiveResponseAsync);
-            IsRunning = true;
             Debug.Log($"[NetworkDiscovery] Started in {(serverMode ? "Server" : "Client")} mode on port {Port}.");
         }
 
         private void StopDiscovery()
         {
-            if (!IsRunning && _client == null && _cancellationTokenSource == null)
+            if (_client == null && _cancellationTokenSource == null)
                 return;
-            IsRunning = false;
             IsServer = false;
             IsClient = false;
             if (_cancellationTokenSource != null)
@@ -262,7 +282,6 @@ namespace Network_Discovery
                 _cancellationTokenSource.Dispose();
                 _cancellationTokenSource = null;
             }
-
             _client = null;
         }
 
@@ -329,8 +348,7 @@ namespace Network_Discovery
                 if (!ReadAndCheckHeader(reader, MessageType.BroadCast))
                     return;
                 reader.ReadNetworkSerializable(out DiscoveryBroadcastData receivedBroadcast);
-                if (ProcessBroadcastImpl(udpResult.RemoteEndPoint, receivedBroadcast,
-                        out DiscoveryResponseData response))
+                if (ProcessBroadcastImpl(udpResult.RemoteEndPoint, receivedBroadcast, out DiscoveryResponseData response))
                     SendResponse(response, udpResult.RemoteEndPoint);
             }
             catch (Exception e)
@@ -404,6 +422,10 @@ namespace Network_Discovery
             networkManager.StartClient();
         }
 
+        #endregion
+
+        #region Utility Functions
+
         private string GetLocalIPAddress()
         {
             var host = Dns.GetHostEntry(Dns.GetHostName());
@@ -461,6 +483,8 @@ namespace Network_Discovery
             return msgType == (byte)expectedType;
         }
 
+        #endregion
+        
         private IEnumerator NetworkReachabilityCheckCR()
         {
             while (true)
@@ -475,7 +499,5 @@ namespace Network_Discovery
                 yield return new WaitForSecondsRealtime(1f);
             }
         }
-
-        private void HandleConnectionChange(bool cleanChange = true) => StartConnection();
     }
 }
