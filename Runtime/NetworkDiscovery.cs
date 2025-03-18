@@ -334,11 +334,20 @@ namespace Network_Discovery
             IsClient = !serverMode;
             yield return new WaitForSeconds(initialDelay);
             _cancellationTokenSource = new CancellationTokenSource();
-            _client = new UdpClient(serverMode ? port : 0)
-            {
-                EnableBroadcast = true,
-                MulticastLoopback = false
-            };
+            
+            // Create the UDP socket manually to set options
+            Socket udpSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+
+            // Set options to allow reuse of address and port
+            udpSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            udpSocket.ExclusiveAddressUse = false; // Ensures other sockets can bind if needed
+
+            // Bind socket to the appropriate endpoint
+            udpSocket.Bind(new IPEndPoint(IPAddress.Any, serverMode ? port : 0));
+
+            // Assign socket to UdpClient
+            _client = new UdpClient { Client = udpSocket, EnableBroadcast = true, MulticastLoopback = false};
+            
             _ = ListenAsync(_cancellationTokenSource.Token, serverMode ? ReceiveBroadcastAsync : ReceiveResponseAsync);
             Debug.Log($"[NetworkDiscovery] Started in {(serverMode ? "Server" : "Client")} mode on port {Port}.");
         }
@@ -367,7 +376,7 @@ namespace Network_Discovery
             {
                 _cancellationTokenSource.Cancel();
                 _cancellationTokenSource.Dispose();
-                _cancellationTokenSource = null;
+                _cancellationTokenSource = null;a
             }
     
             IsServer = false;
