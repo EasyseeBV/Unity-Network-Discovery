@@ -100,6 +100,9 @@ namespace Network_Discovery
 
         #region Event & Connection Handlers
 
+        /// Handles a network connection event, such as a client connecting to the server.
+        /// <param name="manager">The NetworkManager instance managing the netcode behavior.</param>
+        /// <param name="data">The event data containing information about the connection event, including the client ID and event type.</param>
         private void OnConnectionEvent(NetworkManager manager, ConnectionEventData data)
         {
             if (data.EventType == ConnectionEvent.ClientConnected)
@@ -111,6 +114,11 @@ namespace Network_Discovery
             }
         }
 
+        /// <summary>
+        /// Called when the network server starts successfully.
+        /// This method registers a custom message handler for incoming client handshake messages
+        /// and initiates the discovery process for server availability.
+        /// </summary>
         private void OnServerStarted()
         {
             NetworkManager.Singleton.CustomMessagingManager
@@ -119,8 +127,23 @@ namespace Network_Discovery
             StartCoroutine(StartDiscovery(true, serverBroadcastDelay));
         }
 
+        /// Handles the changes in the network connection status for the server or client.
+        /// <param name="cleanChange">
+        /// A boolean value indicating whether the connection change should be a clean change.
+        /// Default is true, meaning the change will be handled cleanly without abrupt disconnections.
+        /// </param>
         private void HandleConnectionChange(bool cleanChange = true) => StartConnection();
 
+        /// <summary>
+        /// Initiates the network connection process based on the current network role and reachability status.
+        /// </summary>
+        /// <remarks>
+        /// Checks if the local network is reachable and determines whether to start hosting the game
+        /// or initiate client broadcasts depending on the assigned network role (Server or Client).
+        /// If the network is unreachable, the process terminates prematurely. If the NetworkManager is
+        /// already active, it will be stopped before proceeding to ensure a clean transition.
+        /// The method also handles restarting the reachability checks and coroutine processes as applicable.
+        /// </remarks>
         private void StartConnection()
         {
             if (NetworkManager.Singleton && NetworkManager.Singleton.IsListening)
@@ -140,6 +163,14 @@ namespace Network_Discovery
                 StartCoroutine(ClientBroadcastCR());
         }
 
+        /// <summary>
+        /// Initializes and starts hosting a game on the local network.
+        /// </summary>
+        /// <remarks>
+        /// This method retrieves the local IP address, updates the transport layer connection
+        /// data with the IP address and port, and starts a server instance using the NetworkManager.
+        /// It is used when the network role is configured as a server in the NetworkDiscovery component.
+        /// </remarks>
         private void HostGame()
         {
             var localIp = GetLocalIPAddress();
@@ -148,6 +179,14 @@ namespace Network_Discovery
             networkManager.StartServer();
         }
 
+        /// <summary>
+        /// Handles client-side network broadcasting to discover available servers on the network.
+        /// Continuously sends broadcast messages after an initial delay, attempting to find and establish
+        /// a connection with a server.
+        /// </summary>
+        /// <returns>
+        /// An enumerator used to manage the coroutine, which periodically sends broadcasts until a server is discovered.
+        /// </returns>
         private IEnumerator ClientBroadcastCR()
         {
             yield return StartCoroutine(StartDiscovery(false, clientBroadcastDelay));
@@ -167,6 +206,12 @@ namespace Network_Discovery
 
         #region Messaging & Handshake
 
+        /// Handles the reception of a message containing a handshake with a client MAC address.
+        /// This method attempts to decrypt the received message using the shared key and then
+        /// registers the client's MAC address to associate it with the provided client ID.
+        /// If decryption fails or the MAC address is invalid, the message is ignored.
+        /// <param name="senderClientId">The unique ID of the client sending the handshake message.</param>
+        /// <param name="reader">A FastBufferReader containing the serialized handshake message data.</param>
         private void OnMacHandshakeMessageReceived(ulong senderClientId, FastBufferReader reader)
         {
             try
@@ -194,7 +239,6 @@ namespace Network_Discovery
                 if (!string.IsNullOrEmpty(decryptedMac))
                 {
                     RegisterClientMac(senderClientId, decryptedMac);
-                    Debug.Log($"Received handshake from client {senderClientId} with MAC {decryptedMac}.");
                 }
             }
             catch (Exception ex)
@@ -203,6 +247,20 @@ namespace Network_Discovery
             }
         }
 
+        /// Sends a handshake message containing the MAC address of the client to the server in a secure manner.
+        /// This method encrypts the MAC address using a shared key and sends it to the server as part of a custom message.
+        /// Preconditions:
+        /// - The client must be connected (`IsConnectedClient` must be true).
+        /// Workflow:
+        /// - Retrieves the client’s MAC address.
+        /// - Encrypts the MAC address using the shared secret key.
+        /// - Serializes the encrypted data into a buffer for transmission.
+        /// - Sends the buffer to the server using the "ClientMacHandshake" custom message channel.
+        /// Logging:
+        /// - Logs warnings if the client is not yet connected.
+        /// - Logs the success of the handshake message transmission and the details of the MAC address sent.
+        /// Note:
+        /// - Ensure that the shared key is correctly set before invoking this method.
         private void SendMacHandshake()
         {
             if (!NetworkManager.Singleton.IsConnectedClient)
@@ -223,6 +281,16 @@ namespace Network_Discovery
             Debug.Log($"{networkManager.LocalClientId} sent handshake message to server with MAC {mac}");
         }
 
+        /// Registers a client's MAC address to the client registry.
+        /// If the MAC address already exists in the registry, updates the corresponding client information
+        /// with the new network ID and timestamp. If it does not exist, creates a new entry in the registry
+        /// with the provided client ID and MAC address.
+        /// <param name="clientId">
+        /// The unique client network ID to associate with the provided MAC address.
+        /// </param>
+        /// <param name="mac">
+        /// The unique MAC address of the client to be registered or updated in the registry.
+        /// </param>
         private void RegisterClientMac(ulong clientId, string mac)
         {
             if (_clientRegistry.TryGetValue(mac, out ClientInfo info))
@@ -254,6 +322,12 @@ namespace Network_Discovery
 
         #region Network Discovery & Broadcast
 
+        /// <summary>
+        /// Starts the network discovery process, allowing for either server or client discovery mode.
+        /// </summary>
+        /// <param name="serverMode">Indicates whether the discovery process is running as a server (true) or as a client (false).</param>
+        /// <param name="initialDelay">The initial delay in seconds before the discovery process starts. Default is 0f.</param>
+        /// <returns>An IEnumerator used for coroutine execution to manage the discovery process.</returns>
         private IEnumerator StartDiscovery(bool serverMode, float initialDelay = 0f)
         {
             StopDiscovery();
@@ -270,6 +344,17 @@ namespace Network_Discovery
             Debug.Log($"[NetworkDiscovery] Started in {(serverMode ? "Server" : "Client")} mode on port {Port}.");
         }
 
+        /// <summary>
+        /// Stops the network discovery process for both server and client modes.
+        /// This method will cancel any active discovery tasks, release resources associated with
+        /// the UDP client, and reset the discovery status flags (<c>IsServer</c> and <c>IsClient</c>)
+        /// to false.
+        /// </summary>
+        /// <remarks>
+        /// If neither the UDP client nor the cancellation token source is initialized,
+        /// the method will perform no operation. This method ensures that resources used for network
+        /// broadcasts and listening are properly disposed of to prevent resource leaks or unexpected behavior.
+        /// </remarks>
         private void StopDiscovery()
         {
             if (_client == null && _cancellationTokenSource == null)
@@ -285,6 +370,17 @@ namespace Network_Discovery
             _client = null;
         }
 
+        /// Sends a client broadcast message over the network to discover available servers.
+        /// <param name="broadcast">
+        /// The data to include with the broadcast message. This should be an instance of
+        /// the DiscoveryBroadcastData struct containing the necessary network information.
+        /// </param>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when attempting to send a client broadcast while not in client mode.
+        /// </exception>
+        /// The method sends a broadcast to the network using UDP. It can only be called
+        /// when the network discovery component is in client mode. The broadcast data is
+        /// serialized and sent to all devices in the network's broadcast domain.
         private void ClientBroadcast(DiscoveryBroadcastData broadcast)
         {
             if (!IsClient)
@@ -297,6 +393,12 @@ namespace Network_Discovery
             _client?.SendAsync(data, data.Length, endPoint);
         }
 
+        /// <summary>
+        /// Continuously listens for incoming network communication or responses, using the provided method for processing received data.
+        /// </summary>
+        /// <param name="token">A cancellation token used to cancel the listening operation.</param>
+        /// <param name="onReceiveTask">A function to invoke when data is received.</param>
+        /// <returns>A task that completes once the listening operation is canceled or an error occurs.</returns>
         private async Task ListenAsync(CancellationToken token, Func<Task> onReceiveTask)
         {
             while (!token.IsCancellationRequested)
@@ -320,6 +422,12 @@ namespace Network_Discovery
             }
         }
 
+        /// Asynchronously handles the reception of network discovery response messages.
+        /// Processes the received data, verifies the header, and parses the response data.
+        /// If a valid response is received, it triggers the appropriate response handling logic.
+        /// <returns>
+        /// A Task representing the asynchronous operation of receiving and processing responses.
+        /// </returns>
         private async Task ReceiveResponseAsync()
         {
             UdpReceiveResult udpResult = await _client.ReceiveAsync();
@@ -338,6 +446,12 @@ namespace Network_Discovery
             }
         }
 
+        /// <summary>
+        /// Asynchronously receives broadcast packets sent over the network during the discovery process.
+        /// Parses and validates the received broadcast data, and sends a response if necessary based
+        /// on the processing result.
+        /// </summary>
+        /// <returns>A task representing the asynchronous operation for receiving and processing broadcasts.</returns>
         private async Task ReceiveBroadcastAsync()
         {
             UdpReceiveResult udpResult = await _client.ReceiveAsync();
@@ -357,6 +471,9 @@ namespace Network_Discovery
             }
         }
 
+        /// Sends a response message containing discovery response data to a specified remote endpoint.
+        /// <param name="response">The discovery response data to send.</param>
+        /// <param name="endPoint">The remote endpoint to which the response will be sent.</param>
         private void SendResponse(DiscoveryResponseData response, IPEndPoint endPoint)
         {
             using FastBufferWriter writer = new FastBufferWriter(1024, Allocator.Temp, 64 * 1024);
@@ -366,6 +483,19 @@ namespace Network_Discovery
             _client?.SendAsync(data, data.Length, endPoint);
         }
 
+        /// Processes a received broadcast message, validates its authenticity, and optionally updates the client registry.
+        /// <param name="sender">
+        /// The endpoint address of the sender of the broadcast.
+        /// </param>
+        /// <param name="broadcast">
+        /// The broadcast data received, containing authentication, timestamp, nonce, and optional MAC address.
+        /// </param>
+        /// <param name="response">
+        /// An output parameter to store the constructed response data if the broadcast is valid.
+        /// </param>
+        /// <returns>
+        /// True if the broadcast message is valid and successfully processed, false otherwise.
+        /// </returns>
         private bool ProcessBroadcastImpl(IPEndPoint sender, DiscoveryBroadcastData broadcast,
             out DiscoveryResponseData response)
         {
@@ -409,6 +539,12 @@ namespace Network_Discovery
             return true;
         }
 
+        /// Handles the response received during the network discovery process.
+        /// Validates the response authentication token and configures the transport layer
+        /// for establishing a connection to the discovered server. If the authentication
+        /// token is invalid, the response is ignored.
+        /// <param name="sender">The IPEndPoint of the sender of the discovery response.</param>
+        /// <param name="response">The response data received during the discovery process.</param>
         private void ResponseReceived(IPEndPoint sender, DiscoveryResponseData response)
         {
             string expectedToken = CryptoHelper.EncryptString("authToken", SharedKey);
@@ -426,6 +562,9 @@ namespace Network_Discovery
 
         #region Utility Functions
 
+        /// Retrieves the local machine's IPv4 address suitable for network communication.
+        /// If no valid IPv4 address is found, it defaults to "127.0.0.1".
+        /// <returns>The local IPv4 address as a string or "127.0.0.1" if no valid address is found.</returns>
         private string GetLocalIPAddress()
         {
             var host = Dns.GetHostEntry(Dns.GetHostName());
@@ -439,6 +578,13 @@ namespace Network_Discovery
             return ip.ToString();
         }
 
+        /// Creates a broadcast data instance based on the current network discovery settings.
+        /// This method generates a `DiscoveryBroadcastData` object to be sent in broadcast messages.
+        /// If client registry is enabled, the returned data includes the MAC address of the client.
+        /// <returns>
+        /// A `DiscoveryBroadcastData` instance containing the generated broadcast information,
+        /// including an authentication token hash, timestamp, nonce, and optionally the MAC address.
+        /// </returns>
         private DiscoveryBroadcastData CreateBroadcastData()
         {
             if (enableClientRegistry)
@@ -452,6 +598,10 @@ namespace Network_Discovery
             }
         }
 
+        /// Retrieves the MAC address of the current machine's active network interface that is operational
+        /// and not of type Loopback. If no suitable network interface is found, or if an error occurs,
+        /// an empty string is returned.
+        /// <returns>The MAC address as a string or an empty string if not found or any error occurs.</returns>
         private string GetMacAddress()
         {
             try
@@ -472,11 +622,23 @@ namespace Network_Discovery
             return "";
         }
 
+        /// <summary>
+        /// Writes a message header to the specified FastBufferWriter.
+        /// The header contains the type of the message being written.
+        /// </summary>
+        /// <param name="writer">The FastBufferWriter to write the header to.</param>
+        /// <param name="type">The type of the message to include in the header.</param>
         private void WriteHeader(FastBufferWriter writer, MessageType type)
         {
             writer.WriteValueSafe((byte)type);
         }
 
+        /// <summary>
+        /// Reads a message header from the provided buffer and verifies that the message type matches the expected type.
+        /// </summary>
+        /// <param name="reader">The buffer reader instance from which the message header is read.</param>
+        /// <param name="expectedType">The expected type of the message.</param>
+        /// <returns>Returns true if the message type matches the expected type; otherwise, false.</returns>
         private bool ReadAndCheckHeader(FastBufferReader reader, MessageType expectedType)
         {
             reader.ReadValueSafe(out byte msgType);
@@ -484,7 +646,18 @@ namespace Network_Discovery
         }
 
         #endregion
-        
+
+        /// Coroutine that monitors the current network reachability status and triggers a reconnection process
+        /// when the network reachability status changes.
+        /// The method continuously checks the current internet reachability status using Unity's
+        /// `Application.internetReachability` property. If there is a change detected in the network
+        /// reachability compared to the last known state, it will trigger the `StartConnection` method
+        /// to handle the reconnection process, ensuring the network state is either adjusted or restarted
+        /// accordingly.
+        /// <return>
+        /// Returns an IEnumerator, allowing this method to be used as a coroutine in Unity's MonoBehaviour
+        /// for repeated asynchronous execution over time.
+        /// </return>
         private IEnumerator NetworkReachabilityCheckCR()
         {
             while (true)
