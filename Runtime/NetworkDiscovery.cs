@@ -17,10 +17,29 @@ namespace Network_Discovery
 {
     public class NetworkDiscovery : MonoBehaviour
     {
+        /// <summary>
+        /// A static event invoked when a new MAC address is registered or updated in the client registry.
+        /// </summary>
+        /// <remarks>
+        /// Server-only
+        /// This event provides a mechanism to notify subscribers whenever a MAC address is successfully
+        /// registered or updated in the internal registry. It carries two parameters:
+        /// the unique network ID of the client and the MAC address being registered.
+        /// </remarks>
+        /// <param name="ulong">
+        /// The unique network ID of the client associated with the registered MAC address.
+        /// </param>
+        /// <param name="string">
+        /// The MAC address of the client that has been registered or updated.
+        /// </param>
+        public static event Action<ulong, string> OnMacAddressRegistered;
+        
         #region Fields & Properties
 
         public static string SharedKey { get; private set; } = "mySecretKey";
         public static void SetSharedKey(string key) => SharedKey = key;
+        
+        
 
         [Header("Network Role")]
         [Tooltip("Specifies the role of the network (Server or Client).")]
@@ -93,9 +112,7 @@ namespace Network_Discovery
             networkManager.OnServerStopped -= HandleConnectionChange;
             networkManager.OnClientStopped -= HandleConnectionChange;
         }
-
-        private void OnApplicationQuit() => StopDiscovery();
-
+        
         #endregion
 
         #region Event & Connection Handlers
@@ -292,10 +309,11 @@ namespace Network_Discovery
         /// </param>
         private void RegisterClientMac(ulong clientId, string mac)
         {
+            // If _clientRegistry already knows of this MAC-address...
             if (_clientRegistry.TryGetValue(mac, out ClientInfo info))
             {
                 string previous = info.CurrentClientId == ulong.MaxValue ? "Unassigned" : info.CurrentClientId.ToString();
-
+        
                 Debug.Log($"Old network-id for MAC {mac} was {previous}, new id is {clientId}.");
                 info = new ClientInfo(info.MacAddress)
                 {
@@ -303,7 +321,7 @@ namespace Network_Discovery
                     CurrentClientId = clientId
                 };
                 _clientRegistry[mac] = info;
-                Debug.Log($"[ClientRegistry] MAC address recognized from broadcast or previous connection! " +
+                Debug.Log($"[ClientRegistry] MAC address recognized from broadcast- or previous connection. " +
                           $"Linked MAC={mac} to PID={clientId}.");
             }
             else
@@ -315,6 +333,8 @@ namespace Network_Discovery
                 _clientRegistry[mac] = newInfo;
                 Debug.Log($"[ClientRegistry] Registered new MAC={mac} and assigned PID={clientId}.");
             }
+        
+            OnMacAddressRegistered?.Invoke(clientId, mac);
         }
 
         #endregion
