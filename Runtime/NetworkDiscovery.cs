@@ -150,6 +150,7 @@ namespace Network_Discovery
             {
                 Debug.Log("[NetworkDiscovery] Stopping NetworkManager before making changes.");
                 NetworkManager.Singleton.Shutdown();
+                StopDiscovery();
             }
 
             StopAllCoroutines();
@@ -157,10 +158,8 @@ namespace Network_Discovery
             StartCoroutine(NetworkReachabilityCheckCR());
             if (_lastReachability == NetworkReachability.NotReachable) return;
 
-            if (role == NetworkRole.Server)
-                HostGame();
-            else
-                StartCoroutine(ClientBroadcastCR());
+            if (role == NetworkRole.Server) HostGame();
+            else StartCoroutine(ClientBroadcastCR());
         }
 
         /// <summary>
@@ -357,17 +356,22 @@ namespace Network_Discovery
         /// </remarks>
         private void StopDiscovery()
         {
-            if (_client == null && _cancellationTokenSource == null)
-                return;
-            IsServer = false;
-            IsClient = false;
+            if (_client != null)
+            {
+                _client.Close();
+                _client.Dispose();
+                _client = null;
+            }
+    
             if (_cancellationTokenSource != null)
             {
                 _cancellationTokenSource.Cancel();
                 _cancellationTokenSource.Dispose();
                 _cancellationTokenSource = null;
             }
-            _client = null;
+    
+            IsServer = false;
+            IsClient = false;
         }
 
         /// Sends a client broadcast message over the network to discover available servers.
