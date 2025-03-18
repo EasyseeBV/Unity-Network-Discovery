@@ -5,6 +5,7 @@ using UnityEngine;
 
 namespace Network_Discovery
 {
+    [System.Serializable]
     public struct ClientInfo : INetworkSerializable
     {
         // Plaintext fields (in memory)
