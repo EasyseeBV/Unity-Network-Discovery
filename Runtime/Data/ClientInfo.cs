@@ -75,10 +75,8 @@ namespace Network_Discovery
             }
         }
 
-        public override string ToString()
-        {
-            return
-                $"MacAddress: {MacAddress}, LastSeen: {LastSeen}, CurrentClientId: {CurrentClientId}, IsConnected: {IsConnected}";
-        }
+        public override string ToString() 
+            => $"MacAddress: {MacAddress}, LastSeen: {LastSeen}, CurrentClientId: {CurrentClientId}, " +
+               $"IsConnected: {IsConnected}";
     }
 }
