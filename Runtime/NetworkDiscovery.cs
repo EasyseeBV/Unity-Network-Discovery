@@ -39,8 +39,6 @@ namespace Network_Discovery
         public static string SharedKey { get; private set; } = "mySecretKey";
         public static void SetSharedKey(string key) => SharedKey = key;
         
-        
-
         [Header("Network Role")]
         [Tooltip("Specifies the role of the network (Server or Client).")]
         public NetworkRole role = NetworkRole.Server;
@@ -72,6 +70,7 @@ namespace Network_Discovery
         private CancellationTokenSource _cancellationTokenSource;
         private NetworkReachability _lastReachability;
         private readonly Dictionary<string, ClientInfo> _clientRegistry = new();
+        private readonly Dictionary<ulong, string> _pidToMac = new();
 
         public bool IsServer { get; private set; }
         public bool IsClient { get; private set; }
@@ -122,12 +121,34 @@ namespace Network_Discovery
         /// <param name="data">The event data containing information about the connection event, including the client ID and event type.</param>
         private void OnConnectionEvent(NetworkManager manager, ConnectionEventData data)
         {
-            if (data.EventType == ConnectionEvent.ClientConnected)
+            if (!enableClientRegistry) return; // Everything below related to client registry.
+            
+            switch (data.EventType)
             {
-                Debug.Log($"A client has connected with PID {data.ClientId}");
-
-                if (data.ClientId == networkManager.LocalClientId)
-                    SendMacHandshake();
+                case ConnectionEvent.ClientConnected:
+                    Debug.Log($"A client has connected with PID {data.ClientId}");
+                    if (data.ClientId == networkManager.LocalClientId) SendMacHandshake();
+                    break;
+                
+                case ConnectionEvent.PeerConnected:
+                    break;
+                
+                case ConnectionEvent.ClientDisconnected:
+                    if (networkManager.IsServer)
+                    {
+                        if (TryGetClientInfoById(data.ClientId, out ClientInfo info))
+                        {
+                            info.IsConnected = false;
+                            info.LastSeenTicks = DateTime.Now.Ticks;
+                            Debug.Log($"[ClientRegistry] Client {info.CurrentClientId} disconnected.");
+                            _clientRegistry[info.MacAddress] = info;
+                            Debug.Log($"[ClientRegistry] Updated registry of {info.MacAddress}: {_clientRegistry[info.MacAddress]}");
+                        }
+                    }
+                    break;
+                
+                case ConnectionEvent.PeerDisconnected:
+                    break;
             }
         }
 
@@ -309,20 +330,16 @@ namespace Network_Discovery
         /// </param>
         private void RegisterClientMac(ulong clientId, string mac)
         {
-            // If _clientRegistry already knows of this MAC-address...
+            // Update the registry based on MAC
             if (_clientRegistry.TryGetValue(mac, out ClientInfo info))
             {
-                string previous = info.CurrentClientId == ulong.MaxValue ? "Unassigned" : info.CurrentClientId.ToString();
-        
-                Debug.Log($"Old network-id for MAC {mac} was {previous}, new id is {clientId}.");
                 info = new ClientInfo(info.MacAddress)
                 {
                     LastSeenTicks = DateTime.Now.Ticks,
-                    CurrentClientId = clientId
+                    CurrentClientId = clientId,
+                    IsConnected = true
                 };
                 _clientRegistry[mac] = info;
-                Debug.Log($"[ClientRegistry] MAC address recognized from broadcast- or previous connection. " +
-                          $"Linked MAC={mac} to PID={clientId}.");
             }
             else
             {
@@ -331,9 +348,11 @@ namespace Network_Discovery
                     CurrentClientId = clientId
                 };
                 _clientRegistry[mac] = newInfo;
-                Debug.Log($"[ClientRegistry] Registered new MAC={mac} and assigned PID={clientId}.");
             }
-        
+    
+            // Update the PID-to-MAC mapping
+            _pidToMac[clientId] = mac;
+            Debug.Log($"Updated client registry: {_clientRegistry[mac]}");
             OnMacAddressRegistered?.Invoke(clientId, mac);
         }
 
@@ -677,7 +696,27 @@ namespace Network_Discovery
             reader.ReadValueSafe(out byte msgType);
             return msgType == (byte)expectedType;
         }
+        
+        /// <summary>
+        /// Attempts to retrieve the ClientInfo associated with the specified client ID.
+        /// </summary>
+        /// <param name="clientId">The client ID (PID) to search for.</param>
+        /// <param name="clientInfo">
+        /// When this method returns, contains the ClientInfo associated with the client ID,
+        /// if found; otherwise, the default value.
+        /// </param>
+        /// <returns>True if a matching ClientInfo was found; otherwise, false.</returns>
+        public bool TryGetClientInfoById(ulong clientId, out ClientInfo clientInfo)
+        {
+            clientInfo = default;
+            if (_pidToMac.TryGetValue(clientId, out string mac) && _clientRegistry.TryGetValue(mac, out clientInfo))
+            {
+                return true;
+            }
+            return false;
+        }
 
+        
         #endregion
 
         /// Coroutine that monitors the current network reachability status and triggers a reconnection process

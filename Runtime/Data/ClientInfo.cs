@@ -11,6 +11,7 @@ namespace Network_Discovery
         public string MacAddress;
         public long LastSeenTicks; // stores DateTime.Now.Ticks
         public ulong CurrentClientId;
+        public bool IsConnected;
 
         // Property to get LastSeen as DateTime
         public DateTime LastSeen => new DateTime(LastSeenTicks);
@@ -21,6 +22,7 @@ namespace Network_Discovery
             LastSeenTicks = DateTime.Now.Ticks;
             CurrentClientId = ulong.MaxValue;
             _encryptedPayload = null;
+            IsConnected = false;
         }
 
         // Private field used only during serialization
@@ -71,6 +73,12 @@ namespace Network_Discovery
                     tempReader.ReadValueSafe(out CurrentClientId);
                 }
             }
+        }
+
+        public override string ToString()
+        {
+            return
+                $"MacAddress: {MacAddress}, LastSeen: {LastSeen}, CurrentClientId: {CurrentClientId}, IsConnected: {IsConnected}";
         }
     }
 }
