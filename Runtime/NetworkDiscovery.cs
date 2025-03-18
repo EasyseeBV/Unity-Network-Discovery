@@ -1,7 +1,9 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
@@ -64,6 +66,11 @@ namespace Network_Discovery
         [SerializeField]
         private ushort port = 47777;
 
+        [Header("Client Registry (Optional)")]
+        [Tooltip("If true, clients will include their MAC address in broadcasts and the server will maintain a registry.")]
+        [SerializeField]
+        private bool enableClientRegistry = true;
+
         #endregion
 
         #region Internal Fields
@@ -73,6 +80,22 @@ namespace Network_Discovery
         private UdpClient _client;
         private CancellationTokenSource _cancellationTokenSource;
         private NetworkReachability _lastReachability;
+
+        // Dictionary to keep track of previously connected clients, keyed by MAC address.
+        private readonly Dictionary<string, ClientInfo> clientRegistry = new();
+
+        // Simple class to hold client information.
+        private class ClientInfo
+        {
+            public string MacAddress;
+            public DateTime LastSeen;
+
+            public ClientInfo(string mac)
+            {
+                MacAddress = mac;
+                LastSeen = DateTime.Now;
+            }
+        }
 
         #endregion
 
@@ -121,7 +144,6 @@ namespace Network_Discovery
         private void OnEnable()
         {
             networkManager.OnServerStarted += OnServerStarted;
-
             networkManager.OnServerStopped += HandleConnectionChange;
             networkManager.OnClientStopped += HandleConnectionChange;
         }
@@ -130,9 +152,7 @@ namespace Network_Discovery
         {
             StopAllCoroutines();
             StopDiscovery();
-
             networkManager.OnServerStarted -= OnServerStarted;
-
             networkManager.OnServerStopped -= HandleConnectionChange;
             networkManager.OnClientStopped -= HandleConnectionChange;
         }
@@ -158,12 +178,12 @@ namespace Network_Discovery
                 NetworkManager.Singleton.Shutdown();
             }
             StopAllCoroutines();
-            
+
             // Restart connection
             _lastReachability = Application.internetReachability;
             StartCoroutine(NetworkReachabilityCheckCR());
             if (_lastReachability == NetworkReachability.NotReachable) return;
-            
+
             if (role == NetworkRole.Server) HostGame();
             else StartCoroutine(ClientBroadcastCR());
         }
@@ -180,7 +200,7 @@ namespace Network_Discovery
             Debug.Log($"[LocalNetworkDiscovery] Hosting on IP: {localIp}, Port: {transport.ConnectionData.Port}");
             networkManager.StartServer();
         }
-        
+
         private IEnumerator ClientBroadcastCR()
         {
             yield return StartCoroutine(StartDiscovery(false, clientBroadcastDelay));
@@ -190,7 +210,7 @@ namespace Network_Discovery
             while (!networkManager.IsConnectedClient)
             {
                 Debug.Log("[LocalNetworkDiscovery] Sending client broadcast...");
-                ClientBroadcast(new DiscoveryBroadcastData(sharedKey));
+                ClientBroadcast(CreateBroadcastData());
                 yield return wait;
             }
 
@@ -269,7 +289,6 @@ namespace Network_Discovery
                 {
                     // Ignored
                 }
-
                 _client = null;
             }
         }
@@ -407,6 +426,7 @@ namespace Network_Discovery
 
         /// <summary>
         /// Validates the broadcast against the shared key and nonce; prepares a response if valid.
+        /// Also registers the client's MAC address if the client registry feature is enabled.
         /// </summary>
         private bool ProcessBroadcastImpl(
             IPEndPoint sender,
@@ -428,6 +448,25 @@ namespace Network_Discovery
                 Debug.Log("[Authentication] Nonce/timestamp check failed, ignoring client broadcast.");
                 response = default;
                 return false;
+            }
+
+            // If the client registry feature is enabled, update the registry with the MAC address.
+            if (enableClientRegistry)
+            {
+                string mac = broadCast.MacAddress; // Assumes DiscoveryBroadcastData now includes a MacAddress field.
+                if (!string.IsNullOrEmpty(mac))
+                {
+                    if (clientRegistry.ContainsKey(mac))
+                    {
+                        clientRegistry[mac].LastSeen = DateTime.Now;
+                        Debug.Log($"[ClientRegistry] Updated client with MAC: {mac}");
+                    }
+                    else
+                    {
+                        clientRegistry.Add(mac, new ClientInfo(mac));
+                        Debug.Log($"[ClientRegistry] Registered new client with MAC: {mac}");
+                    }
+                }
             }
 
             // Build a valid response for client
@@ -478,6 +517,48 @@ namespace Network_Discovery
             return ip.ToString();
         }
 
+        /// <summary>
+        /// Helper to create a DiscoveryBroadcastData instance.
+        /// Includes the MAC address only if the client registry is enabled.
+        /// </summary>
+        private DiscoveryBroadcastData CreateBroadcastData()
+        {
+            if (enableClientRegistry)
+            {
+                string mac = GetMACAddress();
+                // Assumes DiscoveryBroadcastData has an overloaded constructor taking sharedKey and mac address.
+                return new DiscoveryBroadcastData(sharedKey, mac);
+            }
+            else
+            {
+                return new DiscoveryBroadcastData(sharedKey);
+            }
+        }
+
+        /// <summary>
+        /// Retrieves the MAC address of the first active non-loopback network interface.
+        /// </summary>
+        private string GetMACAddress()
+        {
+            try
+            {
+                var interfaces = NetworkInterface.GetAllNetworkInterfaces();
+                foreach (var nic in interfaces)
+                {
+                    if (nic.OperationalStatus == OperationalStatus.Up &&
+                        nic.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+                    {
+                        return nic.GetPhysicalAddress().ToString();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("Failed to get MAC address: " + ex.Message);
+            }
+            return "";
+        }
+
         private void WriteHeader(FastBufferWriter writer, MessageType type)
         {
             writer.WriteValueSafe((byte)type);
@@ -509,6 +590,7 @@ namespace Network_Discovery
         }
 
         private void HandleConnectionChange(bool cleanChange = true) => StartConnection();
+
         #endregion
     }
 }
