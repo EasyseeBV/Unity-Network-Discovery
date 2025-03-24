@@ -57,6 +57,9 @@ namespace Network_Discovery
         //========================================
         // Public Properties
         //========================================
+        public NetworkRole Role { get => role; set => role = value; }
+        public NetworkManager NetworkManager { get => networkManager; set => networkManager = value; }
+        public UnityTransport Transport { get => transport; set => transport = value; }
         public static string SharedKey { get; set; } = "mySecretKey";
         public ushort Port { get => port; set => port = value; }
         public bool AutoStart { get => autoStart; set => autoStart = value; }
@@ -69,6 +72,7 @@ namespace Network_Discovery
         public int MaxBroadcastAttempts { get => maxBroadcastAttempts; set => maxBroadcastAttempts = value; }
         public bool IsClient { get; private set; }
         public bool IsServer { get; private set; }
+        
 
         //========================================
         // Private Fields
