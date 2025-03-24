@@ -17,6 +17,10 @@ namespace Network_Discovery
 {
     public class NetworkDiscovery : MonoBehaviour
     {
+        //////////////////////////////////////////////////////////////////////////////////
+        // Events
+        //////////////////////////////////////////////////////////////////////////////////
+
         /// <summary>
         /// A static event invoked when a new MAC address is registered or updated in the client registry.
         /// </summary>
@@ -27,10 +31,25 @@ namespace Network_Discovery
         /// the unique network ID of the client and the MAC address being registered.
         /// </remarks>
         public static event Action<ulong, string> OnClientConnection;
+
+        /// <summary>
+        /// A static event invoked when a client's disconnection is detected and logged in the client registry.
+        /// </summary>
+        /// <remarks>
+        /// Server-only
+        /// This event notifies subscribers whenever a client disconnects. It provides the MAC address
+        /// of the client that has been disconnected, enabling updates to the client registry or triggering
+        /// additional logic based on the disconnection event.
+        /// </remarks>
         public static event Action<string> OnClientDisconnection;
 
-        #region Fields & Properties
+        //////////////////////////////////////////////////////////////////////////////////
+        // Fields & Properties
+        //////////////////////////////////////////////////////////////////////////////////
 
+        /// <summary>
+        /// This key is used to encrypt/decrypt handshake tokens and broadcast messages.
+        /// </summary>
         public static string SharedKey { get; private set; } = "mySecretKey";
         public static void SetSharedKey(string key) => SharedKey = key;
 
@@ -41,14 +60,17 @@ namespace Network_Discovery
         [Header("Timing")]
         [Tooltip("Interval in seconds at which clients will ping the local network.")]
         [SerializeField] private float clientBroadcastPingInterval = 3f;
+
         [Tooltip("Delay after server-start that server broadcasts its presence.")]
         [SerializeField] private float serverBroadcastDelay = 3f;
+
         [Tooltip("Delay after start that client broadcasts, looking for servers.")]
         [SerializeField] private float clientBroadcastDelay = 3f;
 
         [Header("References")]
         [Tooltip("NetworkManager controlling the netcode behavior.")]
         [SerializeField] private NetworkManager networkManager;
+
         [Tooltip("UTP transport layer for netcode communication.")]
         [SerializeField] private UnityTransport transport;
 
@@ -60,6 +82,19 @@ namespace Network_Discovery
         [Tooltip("If true, clients will include their MAC address in broadcasts and the server will maintain a registry.")]
         [SerializeField] private bool enableClientRegistry = true;
 
+        [Header("Discovery Options")]
+        [Tooltip("If enabled, discovery starts automatically on Start().")]
+        [SerializeField] private bool autoStart = true;
+
+        [Tooltip("If enabled, will attempt to re-start connection or re-broadcast if connection is lost.")]
+        [SerializeField] private bool autoReconnect = true;
+
+        [Tooltip("If > 0, the client broadcast will stop after this many attempts if no server is found. 0 = unlimited.")]
+        [SerializeField] private int maxBroadcastAttempts = 0;
+
+        [Tooltip("If true, discovery will stop once the client successfully connects.")]
+        [SerializeField] private bool stopDiscoveryOnConnect = true;
+
         // Nonce manager for broadcast messages
         private readonly NonceManager _nonceManager = new();
         // Underlying UDP client
@@ -67,8 +102,8 @@ namespace Network_Discovery
         private CancellationTokenSource _cancellationTokenSource;
         private NetworkReachability _lastReachability;
 
-        // ----- PRIMARY client registry structures -----
-        private readonly Dictionary<string, ClientInfo> _clientRegistry = new(); 
+        // Primary client registry structures
+        private readonly Dictionary<string, ClientInfo> _clientRegistry = new();
         private readonly Dictionary<ulong, string> _pidToMac = new();
 
         public bool IsServer { get; private set; }
@@ -81,29 +116,23 @@ namespace Network_Discovery
             Response = 1
         }
 
-        #endregion
-
-        #region Editor Debug List
 #if UNITY_EDITOR
         // This list shows all ClientInfo values from _clientRegistry in the Inspector (Editor-only).
         [Space(10), SerializeField, Tooltip("Editor-only view of the current client registry.")]
         private List<ClientInfo> editorClientRegistry = new();
 
-        /// <summary>
-        /// OnValidate is called by Unity in the Editor whenever this script or its serialized fields change.
-        /// We use it to copy data from the dictionary to our editor-only list for debugging.
-        /// </summary>
+        // Keep the dictionary mirrored into a list for inspector debug.
         private void OnValidate()
         {
-            // If you want to see the dictionary contents only if 'enableClientRegistry' is true, you can do:
+            // If you only want to see registry if 'enableClientRegistry' is on, you can do:
             // if (!enableClientRegistry) { editorClientRegistry.Clear(); return; }
-
             editorClientRegistry = _clientRegistry.Values.ToList();
         }
 #endif
-        #endregion
 
-        #region Unity Lifecycle Methods
+        //////////////////////////////////////////////////////////////////////////////////
+        // Unity Lifecycle Methods
+        //////////////////////////////////////////////////////////////////////////////////
 
         private void Awake()
         {
@@ -119,26 +148,33 @@ namespace Network_Discovery
             networkManager.OnClientStopped += HandleConnectionChange;
         }
 
-        private void Start() => StartConnection();
+        private void Start()
+        {
+            if (autoStart)
+            {
+                StartConnection();
+            }
+        }
 
         private void OnDisable()
         {
             StopAllCoroutines();
             StopDiscovery();
+
             networkManager.OnServerStarted -= OnServerStarted;
             networkManager.OnConnectionEvent -= OnConnectionEvent;
             networkManager.OnServerStopped -= HandleConnectionChange;
             networkManager.OnClientStopped -= HandleConnectionChange;
         }
 
-        #endregion
-
-        #region Event & Connection Handlers
+        //////////////////////////////////////////////////////////////////////////////////
+        // Event & Connection Handlers
+        //////////////////////////////////////////////////////////////////////////////////
 
         private void OnConnectionEvent(NetworkManager manager, ConnectionEventData data)
         {
             if (!enableClientRegistry) return; // Skip if registry not in use
-            
+
             switch (data.EventType)
             {
                 case ConnectionEvent.ClientConnected:
@@ -155,10 +191,9 @@ namespace Network_Discovery
                             info.LastSeenTicks = DateTime.Now.Ticks;
                             _clientRegistry[info.MacAddress] = info;
                             OnClientDisconnection?.Invoke(info.MacAddress);
-                            
+
                             Debug.Log($"[ClientRegistry] Updated registry of {info.MacAddress}: {_clientRegistry[info.MacAddress]}");
 #if UNITY_EDITOR
-                            // Force-refresh the Editor debug list if desired.
                             editorClientRegistry = _clientRegistry.Values.ToList();
 #endif
                         }
@@ -172,13 +207,25 @@ namespace Network_Discovery
             NetworkManager.Singleton.CustomMessagingManager
                 .RegisterNamedMessageHandler("ClientMacHandshake", OnMacHandshakeMessageReceived);
 
+            // If the server should broadcast its presence after a delay:
             StartCoroutine(StartDiscovery(true, serverBroadcastDelay));
         }
 
-        private void HandleConnectionChange(bool cleanChange = true) => StartConnection();
-
-        private void StartConnection()
+        private void HandleConnectionChange(bool cleanChange = true)
         {
+            // The user can decide if they want an immediate reconnection attempt:
+            if (autoReconnect)
+            {
+                StartConnection();
+            }
+        }
+
+        /// <summary>
+        /// Initiates hosting (if server) or broadcasting (if client).
+        /// </summary>
+        public void StartConnection()
+        {
+            // If NetworkManager is listening, shut it down before re-configuring:
             if (NetworkManager.Singleton && NetworkManager.Singleton.IsListening)
             {
                 Debug.Log("[NetworkDiscovery] Stopping NetworkManager before making changes.");
@@ -186,13 +233,25 @@ namespace Network_Discovery
                 StopDiscovery();
             }
 
-            StopAllCoroutines();
+            StopAllCoroutines(); // Stop any previous routines
             _lastReachability = Application.internetReachability;
-            StartCoroutine(NetworkReachabilityCheckCR());
-            if (_lastReachability == NetworkReachability.NotReachable) return;
 
-            if (role == NetworkRole.Server) HostGame();
-            else StartCoroutine(ClientBroadcastCR());
+            // Only check for changes if user wants auto-reconnect:
+            if (autoReconnect) StartCoroutine(NetworkReachabilityCheckCR());
+            
+            if (_lastReachability == NetworkReachability.NotReachable)
+            {
+                throw new InvalidOperationException("Cannot start network discovery: no network reachable.");
+            }
+
+            if (role == NetworkRole.Server)
+            {
+                HostGame();
+            }
+            else
+            {
+                StartCoroutine(ClientBroadcastCR());
+            }
         }
 
         private void HostGame()
@@ -205,21 +264,38 @@ namespace Network_Discovery
 
         private IEnumerator ClientBroadcastCR()
         {
+            // Let the client wait a bit before first broadcast.
             yield return StartCoroutine(StartDiscovery(false, clientBroadcastDelay));
+
             WaitForSeconds wait = new WaitForSeconds(clientBroadcastPingInterval);
+
+            int attemptCounter = 0;
             while (!networkManager.IsConnectedClient)
             {
-                Debug.Log("[LocalNetworkDiscovery] Sending client broadcast...");
+                // If maxBroadcastAttempts is set and reached, break out.
+                if (maxBroadcastAttempts > 0 && attemptCounter >= maxBroadcastAttempts)
+                {
+                    Debug.Log("[LocalNetworkDiscovery] Max broadcast attempts reached, giving up.");
+                    break;
+                }
+
+                attemptCounter++;
+                Debug.Log($"[LocalNetworkDiscovery] Sending client broadcast (attempt #{attemptCounter})...");
                 ClientBroadcast(CreateBroadcastData());
+
                 yield return wait;
             }
-            StopDiscovery();
-            Debug.Log("[LocalNetworkDiscovery] Found server, stopped discovery.");
+
+            if (stopDiscoveryOnConnect && networkManager.IsConnectedClient)
+            {
+                StopDiscovery();
+                Debug.Log("[LocalNetworkDiscovery] Found server; discovery stopped.");
+            }
         }
 
-        #endregion
-
-        #region Messaging & Handshake
+        //////////////////////////////////////////////////////////////////////////////////
+        // Messaging & Handshake
+        //////////////////////////////////////////////////////////////////////////////////
 
         private void OnMacHandshakeMessageReceived(ulong senderClientId, FastBufferReader reader)
         {
@@ -233,18 +309,14 @@ namespace Network_Discovery
                     reader.ReadValueSafe(out encryptedBytes[i]);
                 }
 
-                string decryptedMac = null;
                 byte[] decryptedBytes = CryptoHelper.DecryptBytes(encryptedBytes, SharedKey);
-                if (decryptedBytes != null)
+                if (decryptedBytes == null)
                 {
-                    decryptedMac = Encoding.UTF8.GetString(decryptedBytes);
-                }
-                else
-                {
-                    Debug.LogWarning("[Server] Decryption failed due to mismatched key. Ignoring message.");
+                    Debug.LogWarning("[Server] Decryption failed. Possibly wrong key. Ignoring.");
                     return;
                 }
 
+                string decryptedMac = Encoding.UTF8.GetString(decryptedBytes);
                 if (!string.IsNullOrEmpty(decryptedMac))
                 {
                     RegisterClientMac(senderClientId, decryptedMac);
@@ -268,11 +340,14 @@ namespace Network_Discovery
             byte[] plainData = Encoding.UTF8.GetBytes(mac);
             byte[] encryptedData = CryptoHelper.EncryptBytes(plainData, SharedKey);
             uint size = (uint)encryptedData.Length;
+
             using FastBufferWriter writer = new FastBufferWriter((int)size + sizeof(uint), Allocator.Temp);
             writer.WriteValueSafe(size);
             writer.WriteBytesSafe(encryptedData, (int)size);
+
             NetworkManager.Singleton.CustomMessagingManager
                 .SendNamedMessage("ClientMacHandshake", NetworkManager.ServerClientId, writer);
+
             Debug.Log($"{networkManager.LocalClientId} sent handshake message to server with MAC {mac}");
         }
 
@@ -280,48 +355,54 @@ namespace Network_Discovery
         {
             if (_clientRegistry.TryGetValue(mac, out ClientInfo info))
             {
-                info = new ClientInfo(info.MacAddress)
+                info.LastSeenTicks = DateTime.Now.Ticks;
+                info.CurrentClientId = clientId;
+                info.IsConnected = true;
+                _clientRegistry[mac] = info;
+            }
+            else
+            {
+                // Newly discovered MAC
+                var newInfo = new ClientInfo(mac)
                 {
                     LastSeenTicks = DateTime.Now.Ticks,
                     CurrentClientId = clientId,
                     IsConnected = true
                 };
-                _clientRegistry[mac] = info;
+                _clientRegistry[mac] = newInfo;
             }
-            // (If you want newly discovered MAC to be added, you can add that logic here if missing.)
-            
+
             _pidToMac[clientId] = mac;
             Debug.Log($"Updated client registry: {_clientRegistry[mac]}");
             OnClientConnection?.Invoke(clientId, mac);
 
 #if UNITY_EDITOR
-            // Refresh the debug list in the Editor
             editorClientRegistry = _clientRegistry.Values.ToList();
 #endif
         }
 
-        #endregion
-
-        #region Network Discovery & Broadcast
+        //////////////////////////////////////////////////////////////////////////////////
+        // Network Discovery & Broadcast
+        //////////////////////////////////////////////////////////////////////////////////
 
         private IEnumerator StartDiscovery(bool serverMode, float initialDelay = 0f)
         {
             StopDiscovery();
             IsServer = serverMode;
             IsClient = !serverMode;
+
             yield return new WaitForSeconds(initialDelay);
             _cancellationTokenSource = new CancellationTokenSource();
 
-            // Create the UDP socket manually to set options
+            // Create the UDP socket manually so we can set options.
             Socket udpSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             udpSocket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            udpSocket.ExclusiveAddressUse = false; 
+            udpSocket.ExclusiveAddressUse = false;
             udpSocket.Bind(new IPEndPoint(IPAddress.Any, serverMode ? port : 0));
 
-            // Assign socket to UdpClient
-            _client = new UdpClient { Client = udpSocket, EnableBroadcast = true, MulticastLoopback = false};
-
+            _client = new UdpClient { Client = udpSocket, EnableBroadcast = true, MulticastLoopback = false };
             _ = ListenAsync(_cancellationTokenSource.Token, serverMode ? ReceiveBroadcastAsync : ReceiveResponseAsync);
+
             Debug.Log($"[NetworkDiscovery] Started in {(serverMode ? "Server" : "Client")} mode on port {Port}.");
         }
 
@@ -333,14 +414,14 @@ namespace Network_Discovery
                 _client.Dispose();
                 _client = null;
             }
-    
+
             if (_cancellationTokenSource != null)
             {
                 _cancellationTokenSource.Cancel();
                 _cancellationTokenSource.Dispose();
                 _cancellationTokenSource = null;
             }
-    
+
             IsServer = false;
             IsClient = false;
         }
@@ -348,12 +429,14 @@ namespace Network_Discovery
         private void ClientBroadcast(DiscoveryBroadcastData broadcast)
         {
             if (!IsClient)
-                throw new InvalidOperationException("Cannot send client broadcast while not running in client mode.");
+                throw new InvalidOperationException("Cannot send client broadcast when not in client mode.");
+
             IPEndPoint endPoint = new IPEndPoint(IPAddress.Broadcast, port);
             using FastBufferWriter writer = new FastBufferWriter(1024, Allocator.Temp, 64 * 1024);
             WriteHeader(writer, MessageType.BroadCast);
             writer.WriteNetworkSerializable(broadcast);
             byte[] data = writer.ToArray();
+
             _client?.SendAsync(data, data.Length, endPoint);
         }
 
@@ -384,11 +467,13 @@ namespace Network_Discovery
         {
             UdpReceiveResult udpResult = await _client.ReceiveAsync();
             var segment = new ArraySegment<byte>(udpResult.Buffer, 0, udpResult.Buffer.Length);
+
             using FastBufferReader reader = new FastBufferReader(segment, Allocator.Persistent);
             try
             {
                 if (!ReadAndCheckHeader(reader, MessageType.Response))
                     return;
+
                 reader.ReadNetworkSerializable(out DiscoveryResponseData receivedResponse);
                 ResponseReceived(udpResult.RemoteEndPoint, receivedResponse);
             }
@@ -402,14 +487,18 @@ namespace Network_Discovery
         {
             UdpReceiveResult udpResult = await _client.ReceiveAsync();
             var segment = new ArraySegment<byte>(udpResult.Buffer, 0, udpResult.Buffer.Length);
+
             using FastBufferReader reader = new FastBufferReader(segment, Allocator.Persistent);
             try
             {
                 if (!ReadAndCheckHeader(reader, MessageType.BroadCast))
                     return;
+
                 reader.ReadNetworkSerializable(out DiscoveryBroadcastData receivedBroadcast);
                 if (ProcessBroadcastImpl(udpResult.RemoteEndPoint, receivedBroadcast, out DiscoveryResponseData response))
+                {
                     SendResponse(response, udpResult.RemoteEndPoint);
+                }
             }
             catch (Exception e)
             {
@@ -423,6 +512,7 @@ namespace Network_Discovery
             WriteHeader(writer, MessageType.Response);
             writer.WriteNetworkSerializable(response);
             byte[] data = writer.ToArray();
+
             _client?.SendAsync(data, data.Length, endPoint);
         }
 
@@ -485,9 +575,9 @@ namespace Network_Discovery
             networkManager.StartClient();
         }
 
-        #endregion
-
-        #region Utility Functions
+        //////////////////////////////////////////////////////////////////////////////////
+        // Utility Functions
+        //////////////////////////////////////////////////////////////////////////////////
 
         private string GetLocalIPAddress()
         {
@@ -495,7 +585,7 @@ namespace Network_Discovery
             var ip = host.AddressList.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork);
             if (ip == null)
             {
-                Debug.LogWarning("[NetworkDiscovery] Could not find a valid IPv4 address, defaulting to localhost.");
+                Debug.LogWarning("[NetworkDiscovery] Could not find a valid IPv4 address; defaulting to localhost.");
                 return "127.0.0.1";
             }
             return ip.ToString();
@@ -523,7 +613,9 @@ namespace Network_Discovery
                 {
                     if (nic.OperationalStatus == OperationalStatus.Up &&
                         nic.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+                    {
                         return nic.GetPhysicalAddress().ToString();
+                    }
                 }
             }
             catch (Exception ex)
@@ -554,8 +646,10 @@ namespace Network_Discovery
             return false;
         }
 
-        #endregion
-
+        /// <summary>
+        /// Periodically checks for changes in network reachability and attempts to reconnect if lost.
+        /// Only runs if 'autoReconnect' is true.
+        /// </summary>
         private IEnumerator NetworkReachabilityCheckCR()
         {
             while (true)
@@ -564,7 +658,10 @@ namespace Network_Discovery
                 if (currentReachability != _lastReachability)
                 {
                     _lastReachability = currentReachability;
-                    StartConnection();
+                    if (autoReconnect && currentReachability != NetworkReachability.NotReachable)
+                    {
+                        StartConnection();
+                    }
                 }
                 yield return new WaitForSecondsRealtime(1f);
             }
