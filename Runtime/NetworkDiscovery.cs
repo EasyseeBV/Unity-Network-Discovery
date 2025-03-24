@@ -17,118 +17,68 @@ namespace Network_Discovery
 {
     public class NetworkDiscovery : MonoBehaviour
     {
-        //////////////////////////////////////////////////////////////////////////////////
-        // Events
-        //////////////////////////////////////////////////////////////////////////////////
-
-        /// <summary>
-        /// A static event invoked when a new MAC address is registered or updated in the client registry.
-        /// </summary>
-        /// <remarks>
-        /// Server-only
-        /// This event provides a mechanism to notify subscribers whenever a MAC address is successfully
-        /// registered or updated in the internal registry. It carries two parameters:
-        /// the unique network ID of the client and the MAC address being registered.
-        /// </remarks>
+      //========================================
+        // Events (Server-only)
+        //========================================
         public static event Action<ulong, string> OnClientConnection;
-
-        /// <summary>
-        /// A static event invoked when a client's disconnection is detected and logged in the client registry.
-        /// </summary>
-        /// <remarks>
-        /// Server-only
-        /// This event notifies subscribers whenever a client disconnects. It provides the MAC address
-        /// of the client that has been disconnected, enabling updates to the client registry or triggering
-        /// additional logic based on the disconnection event.
-        /// </remarks>
         public static event Action<string> OnClientDisconnection;
 
-        //////////////////////////////////////////////////////////////////////////////////
-        // Fields & Properties
-        //////////////////////////////////////////////////////////////////////////////////
-
-        /// <summary>
-        /// This key is used to encrypt/decrypt handshake tokens and broadcast messages.
-        /// </summary>
-        public static string SharedKey { get; private set; } = "mySecretKey";
-        public static void SetSharedKey(string key) => SharedKey = key;
-
+        //========================================
+        // Serialized Inspector Fields
+        //========================================
         [Header("Network Role")]
-        [Tooltip("Specifies the role of the network (Server or Client).")]
-        public NetworkRole role = NetworkRole.Server;
-
-        [Header("Timing")]
-        [Tooltip("Interval in seconds at which clients will ping the local network.")]
-        [SerializeField] private float clientBroadcastPingInterval = 3f;
-
-        [Tooltip("Delay after server-start that server broadcasts its presence.")]
-        [SerializeField] private float serverBroadcastDelay = 3f;
-
-        [Tooltip("Delay after start that client broadcasts, looking for servers.")]
-        [SerializeField] private float clientBroadcastDelay = 3f;
-
-        [Header("References")]
-        [Tooltip("NetworkManager controlling the netcode behavior.")]
-        [SerializeField] private NetworkManager networkManager;
-
-        [Tooltip("UTP transport layer for netcode communication.")]
-        [SerializeField] private UnityTransport transport;
+        [SerializeField] private NetworkRole role = NetworkRole.Server;
 
         [Header("Broadcast Port")]
-        [Tooltip("The port used for sending/receiving network discovery broadcasts.")]
         [SerializeField] private ushort port = 47777;
 
-        [Header("Client Registry (Optional)")]
-        [Tooltip("If true, clients will include their MAC address in broadcasts and the server will maintain a registry.")]
-        [SerializeField] private bool enableClientRegistry = true;
+        [Header("Timing")]
+        [SerializeField] private float serverBroadcastDelay = 3f;
+        [SerializeField] private float clientBroadcastDelay = 3f;
+        [SerializeField] private float clientBroadcastPingInterval = 3f;
 
         [Header("Discovery Options")]
-        [Tooltip("If enabled, discovery starts automatically on Start().")]
         [SerializeField] private bool autoStart = true;
-
-        [Tooltip("If enabled, will attempt to re-start connection or re-broadcast if connection is lost.")]
         [SerializeField] private bool autoReconnect = true;
-
-        [Tooltip("If > 0, the client broadcast will stop after this many attempts if no server is found. 0 = unlimited.")]
+        [SerializeField] private bool stopDiscoveryOnConnect = true;
         [SerializeField] private int maxBroadcastAttempts = 0;
 
-        [Tooltip("If true, discovery will stop once the client successfully connects.")]
-        [SerializeField] private bool stopDiscoveryOnConnect = true;
+        [Header("Client Registry (Optional)")]
+        [SerializeField] private bool enableClientRegistry = true;
 
-        // Nonce manager for broadcast messages
-        private readonly NonceManager _nonceManager = new();
-        // Underlying UDP client
-        private UdpClient _client;
-        private CancellationTokenSource _cancellationTokenSource;
-        private NetworkReachability _lastReachability;
-
-        // Primary client registry structures
-        private readonly Dictionary<string, ClientInfo> _clientRegistry = new();
-        private readonly Dictionary<ulong, string> _pidToMac = new();
-
-        public bool IsServer { get; private set; }
-        public bool IsClient { get; private set; }
-        private ushort Port => port;
-
-        private enum MessageType : byte
-        {
-            BroadCast = 0,
-            Response = 1
-        }
+        [Header("References")]
+        [SerializeField] private NetworkManager networkManager;
+        [SerializeField] private UnityTransport transport;
 
 #if UNITY_EDITOR
-        // This list shows all ClientInfo values from _clientRegistry in the Inspector (Editor-only).
-        [Space(10), SerializeField, Tooltip("Editor-only view of the current client registry.")]
-        private List<ClientInfo> editorClientRegistry = new();
-
-        // Keep the dictionary mirrored into a list for inspector debug.
-        private void OnValidate()
-        {
-            // If you only want to see registry if 'enableClientRegistry' is on, you can do:
-            // if (!enableClientRegistry) { editorClientRegistry.Clear(); return; }
-            editorClientRegistry = _clientRegistry.Values.ToList();
-        }
+        [SerializeField] private List<ClientInfo> editorClientRegistry;
 #endif
+
+        //========================================
+        // Public Properties
+        //========================================
+        public static string SharedKey { get; set; } = "mySecretKey";
+        public ushort Port { get => port; set => port = value; }
+        public bool AutoStart { get => autoStart; set => autoStart = value; }
+        public bool AutoReconnect { get => autoReconnect; set => autoReconnect = value; }
+        public bool EnableClientRegistry { get => enableClientRegistry; set => enableClientRegistry = value; }
+        public bool StopDiscoveryOnConnect { get => stopDiscoveryOnConnect; set => stopDiscoveryOnConnect = value; }
+        public float ClientBroadcastDelay { get => clientBroadcastDelay; set => clientBroadcastDelay = value; }
+        public float ClientBroadcastPingInterval { get => clientBroadcastPingInterval; set => clientBroadcastPingInterval = value; }
+        public float ServerBroadcastDelay { get => serverBroadcastDelay; set => serverBroadcastDelay = value; }
+        public int MaxBroadcastAttempts { get => maxBroadcastAttempts; set => maxBroadcastAttempts = value; }
+        public bool IsClient { get; private set; }
+        public bool IsServer { get; private set; }
+
+        //========================================
+        // Private Fields
+        //========================================
+        private readonly Dictionary<ulong, string> _pidToMac = new();
+        private readonly Dictionary<string, ClientInfo> _clientRegistry = new();
+        private readonly NonceManager _nonceManager = new();
+        private CancellationTokenSource _cancellationTokenSource;
+        private UdpClient _client;
+        private NetworkReachability _lastReachability;
 
         //////////////////////////////////////////////////////////////////////////////////
         // Unity Lifecycle Methods
@@ -192,12 +142,14 @@ namespace Network_Discovery
                             _clientRegistry[info.MacAddress] = info;
                             OnClientDisconnection?.Invoke(info.MacAddress);
 
-                            Debug.Log($"[ClientRegistry] Updated registry of {info.MacAddress}: {_clientRegistry[info.MacAddress]}");
+                            Debug.Log(
+                                $"[ClientRegistry] Updated registry of {info.MacAddress}: {_clientRegistry[info.MacAddress]}");
 #if UNITY_EDITOR
                             editorClientRegistry = _clientRegistry.Values.ToList();
 #endif
                         }
                     }
+
                     break;
             }
         }
@@ -238,7 +190,7 @@ namespace Network_Discovery
 
             // Only check for changes if user wants auto-reconnect:
             if (autoReconnect) StartCoroutine(NetworkReachabilityCheckCR());
-            
+
             if (_lastReachability == NetworkReachability.NotReachable)
             {
                 throw new InvalidOperationException("Cannot start network discovery: no network reachable.");
@@ -495,7 +447,8 @@ namespace Network_Discovery
                     return;
 
                 reader.ReadNetworkSerializable(out DiscoveryBroadcastData receivedBroadcast);
-                if (ProcessBroadcastImpl(udpResult.RemoteEndPoint, receivedBroadcast, out DiscoveryResponseData response))
+                if (ProcessBroadcastImpl(udpResult.RemoteEndPoint, receivedBroadcast,
+                        out DiscoveryResponseData response))
                 {
                     SendResponse(response, udpResult.RemoteEndPoint);
                 }
@@ -550,7 +503,8 @@ namespace Network_Discovery
                     {
                         var info = new ClientInfo(mac);
                         _clientRegistry.Add(mac, info);
-                        Debug.Log($"[ClientRegistry] Registered new client with MAC: {mac}, PID {info.CurrentClientId}");
+                        Debug.Log(
+                            $"[ClientRegistry] Registered new client with MAC: {mac}, PID {info.CurrentClientId}");
 #if UNITY_EDITOR
                         editorClientRegistry = _clientRegistry.Values.ToList();
 #endif
@@ -588,6 +542,7 @@ namespace Network_Discovery
                 Debug.LogWarning("[NetworkDiscovery] Could not find a valid IPv4 address; defaulting to localhost.");
                 return "127.0.0.1";
             }
+
             return ip.ToString();
         }
 
@@ -622,6 +577,7 @@ namespace Network_Discovery
             {
                 Debug.LogError("Failed to get MAC address: " + ex.Message);
             }
+
             return "";
         }
 
@@ -643,6 +599,7 @@ namespace Network_Discovery
             {
                 return true;
             }
+
             return false;
         }
 
@@ -663,8 +620,11 @@ namespace Network_Discovery
                         StartConnection();
                     }
                 }
+
                 yield return new WaitForSecondsRealtime(1f);
             }
         }
+        
+        private enum MessageType : byte { BroadCast, Response }
     }
 }
