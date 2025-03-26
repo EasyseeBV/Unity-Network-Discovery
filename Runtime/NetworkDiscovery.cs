@@ -20,7 +20,29 @@ namespace Network_Discovery
       //========================================
         // Events (Server-only)
         //========================================
+        /// <summary>
+        /// An event triggered when a client connects to the server. Invoked locally & on the server.
+        /// </summary>
+        /// <remarks>
+        /// This event is invoked with the client's unique ID and MAC address when a client establishes
+        /// a connection with the server. It can be used to handle custom behavior for newly connected clients,
+        /// such as updating client registries or initiating specific server-side operations related to the client.
+        /// </remarks>
+        /// <param name="clientId">
+        /// The unique identifier of the client assigned by the network manager.
+        /// </param>
+        /// <param name="macAddress">
+        /// The MAC address or unique network identifier associated with the connected client.
+        /// </param>
         public static event Action<ulong, string> OnClientConnection;
+
+        /// <summary>
+        /// Event triggered upon the disconnection of a client from the network.
+        /// </summary>
+        /// <remarks>
+        /// The event is invoked with the MAC address of the client as a parameter.
+        /// It allows listeners to handle cleanup, update client states, or log disconnection activity.
+        /// </remarks>
         public static event Action<string> OnClientDisconnection;
 
         //========================================
