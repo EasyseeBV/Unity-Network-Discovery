@@ -133,7 +133,11 @@ namespace Network_Discovery
             {
                 case ConnectionEvent.ClientConnected:
                     Debug.Log($"A client has connected with PID {data.ClientId}");
-                    if (data.ClientId == networkManager.LocalClientId) SendMacHandshake();
+                    if (data.ClientId == networkManager.LocalClientId)
+                    {
+                        SendMacHandshake();
+                        OnClientConnection?.Invoke(data.ClientId, GetMacAddress());
+                    }
                     break;
 
                 case ConnectionEvent.ClientDisconnected:
