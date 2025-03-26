@@ -79,20 +79,168 @@ namespace Network_Discovery
         //========================================
         // Public Properties
         //========================================
+        /// <summary>
+        /// Gets or sets the role of the network instance, defining whether it functions as a "Client" or "Server".
+        /// </summary>
+        /// <remarks>
+        /// The role determines the behavior of the network instance within a multiplayer setup.
+        /// When set to "Server", the instance hosts the network and manages client connections.
+        /// When set to "Client", the instance performs broadcasting to attempt connecting to a server.
+        /// </remarks>
         public NetworkRole Role { get => role; set => role = value; }
+
+        /// <summary>
+        /// A reference to the <see cref="Unity.Netcode.NetworkManager"/> instance.
+        /// </summary>
+        /// <remarks>
+        /// This property represents the instance of the Network Manager used to control and manage network-related functionality,
+        /// such as starting and stopping network sessions, managing connected clients, and handling networked messages. It can
+        /// be assigned or retrieved in order to integrate or customize behavior related to the Network Manager within the application.
+        /// </remarks>
         public NetworkManager NetworkManager { get => networkManager; set => networkManager = value; }
+
+        /// <summary>
+        /// The transport layer used for network communication in the application.
+        /// </summary>
+        /// <remarks>
+        /// This property provides access to the configured UnityTransport instance, responsible for handling
+        /// low-level networking functionality such as data transmission, connection management, and transport-specific settings.
+        /// It is utilized by the NetworkManager to manage networked communication between clients and servers.
+        /// </remarks>
         public UnityTransport Transport { get => transport; set => transport = value; }
+
+        /// <summary>
+        /// A shared key used for encryption and decryption of sensitive data during the network discovery process.
+        /// </summary>
+        /// <remarks>
+        /// The shared key is a crucial component for secure communication between clients and servers.
+        /// It is used in various cryptographic operations, such as encrypting broadcast tokens, handshake messages,
+        /// and validating authentication data during network discovery and connection procedures.
+        /// Updating this key requires synchronizing it across all participating clients and the server to ensure compatibility.
+        /// </remarks>
+        /// <value>
+        /// A string representing the shared encryption key. This key must remain consistent across the networked components
+        /// to ensure secure data exchange.
+        /// </value>
         public static string SharedKey { get; set; } = "mySecretKey";
+
+        /// <summary>
+        /// Gets or sets the port number used for network discovery broadcasts and communication.
+        /// </summary>
+        /// <remarks>
+        /// This property specifies the port on which the application listens for or sends network discovery
+        /// broadcasts. The port is used both in server and client modes to facilitate communication between
+        /// peers. It must match between clients and the server for successful discovery and connection.
+        /// </remarks>
         public ushort Port { get => port; set => port = value; }
+
+        /// <summary>
+        /// Determines whether the network discovery process starts automatically upon initialization.
+        /// </summary>
+        /// <remarks>
+        /// When set to true, the network discovery component will immediately begin either hosting or
+        /// broadcasting based on the assigned network role (Server or Client) as soon as it is initialized.
+        /// This property allows for a hands-free configuration where the discovery process starts without requiring
+        /// manual intervention via code or user input.
+        /// </remarks>
         public bool AutoStart { get => autoStart; set => autoStart = value; }
+
+        /// <summary>
+        /// A property that determines whether the network system should automatically attempt
+        /// to reconnect upon detecting network interruptions or disconnections.
+        /// </summary>
+        /// <remarks>
+        /// If enabled, the system will monitor network reachability and attempt to restore the
+        /// network connection when interruptions are resolved. This can be useful for maintaining
+        /// persistent network connections in environments with unstable connectivity.
+        /// </remarks>
         public bool AutoReconnect { get => autoReconnect; set => autoReconnect = value; }
+
+        /// <summary>
+        /// Determines whether the client registry feature is enabled for tracking connected clients.
+        /// </summary>
+        /// <remarks>
+        /// When enabled, the system maintains a registry of connected clients, allowing for the storage
+        /// and retrieval of client information such as connection details or custom data associated with
+        /// each client. This feature can be useful for implementing more complex networking functionality
+        /// that depends on client-specific records or states.
+        /// </remarks>
         public bool EnableClientRegistry { get => enableClientRegistry; set => enableClientRegistry = value; }
+
+        /// <summary>
+        /// Determines whether network discovery should stop broadcasting or listening
+        /// when the client establishes a connection to the server.
+        /// </summary>
+        /// <remarks>
+        /// Setting this property to <c>true</c> will automatically stop the discovery process
+        /// on a successful connection. This is useful in scenarios where continuous broadcasting
+        /// or discovery after connection is unnecessary or may cause conflicts.
+        /// If set to <c>false</c>, network discovery will continue even after a successful connection.
+        /// </remarks>
+        /// <value>
+        /// A boolean value that controls the behavior of the discovery process upon connection.
+        /// </value>
         public bool StopDiscoveryOnConnect { get => stopDiscoveryOnConnect; set => stopDiscoveryOnConnect = value; }
+
+        /// <summary>
+        /// Specifies the delay interval in seconds between successive broadcast attempts made by the client during network discovery.
+        /// </summary>
+        /// <remarks>
+        /// This property defines the duration that the client waits before sending another broadcast message to discover servers
+        /// on the network. It is primarily used in the client role to manage broadcast frequency and can be adjusted to balance
+        /// network efficiency and discovery speed.
+        /// </remarks>
         public float ClientBroadcastDelay { get => clientBroadcastDelay; set => clientBroadcastDelay = value; }
+
+        /// <summary>
+        /// The interval, in seconds, at which the client sends broadcast ping messages to discover a server.
+        /// </summary>
+        /// <remarks>
+        /// This property defines the frequency with which the client broadcasts pings to detect servers
+        /// available on the network. Reducing the interval may result in faster discovery but can increase
+        /// network traffic, while increasing the interval can reduce traffic at the cost of slower detection.
+        /// </remarks>
         public float ClientBroadcastPingInterval { get => clientBroadcastPingInterval; set => clientBroadcastPingInterval = value; }
+
+        /// <summary>
+        /// The interval, in seconds, at which the server broadcasts presence information to clients.
+        /// </summary>
+        /// <remarks>
+        /// This property determines how frequently the server will emit broadcast messages to facilitate
+        /// network discovery by clients. The value should be set carefully to balance discovery responsiveness
+        /// and network traffic. Shorter intervals provide quicker discovery for clients but may increase
+        /// network load. Longer intervals reduce network load but may delay client discovery.
+        /// </remarks>
         public float ServerBroadcastDelay { get => serverBroadcastDelay; set => serverBroadcastDelay = value; }
+
+        /// <summary>
+        /// Specifies the maximum number of broadcast attempts a client will make when attempting to discover a server.
+        /// </summary>
+        /// <remarks>
+        /// This property is used to limit the number of broadcast retries made by the client when attempting to connect
+        /// to a server in the network discovery process. A value of 0 indicates no limit, meaning the client will continue
+        /// to broadcast until either a connection is established or the process is manually stopped.
+        /// </remarks>
         public int MaxBroadcastAttempts { get => maxBroadcastAttempts; set => maxBroadcastAttempts = value; }
+
+        /// <summary>
+        /// Indicates whether the current instance of the network discovery is operating in client mode.
+        /// </summary>
+        /// <remarks>
+        /// This property is set internally when starting or stopping the network discovery process.
+        /// Its value determines if the instance is functioning as a client, primarily listening for server broadcasts,
+        /// sending client-specific broadcasts, or managing client-specific behavior.
+        /// </remarks>
         public bool IsClient { get; private set; }
+
+        /// <summary>
+        /// Indicates whether the network discovery instance is currently operating in server mode.
+        /// </summary>
+        /// <remarks>
+        /// This property is set internally when starting or stopping network discovery. It determines whether the
+        /// instance is acting as a server. When true, the instance is configured to broadcast data and listen for client responses.
+        /// When false, the instance operates in client mode, sending discovery requests and waiting for responses from servers.
+        /// </remarks>
         public bool IsServer { get; private set; }
         
 
