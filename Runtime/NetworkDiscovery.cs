@@ -12,12 +12,15 @@ using Unity.Collections;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace Network_Discovery
 {
     public class NetworkDiscovery : MonoBehaviour
     {
-      //========================================
+        public static NetworkDiscovery SingletonInstance { get; private set; }
+
+        //========================================
         // Events (Server-only)
         //========================================
         /// <summary>
@@ -48,6 +51,8 @@ namespace Network_Discovery
         //========================================
         // Serialized Inspector Fields
         //========================================
+        [SerializeField] private bool singleton = false;
+
         [Header("Network Role")]
         [SerializeField] private NetworkRole role = NetworkRole.Server;
 
@@ -79,6 +84,12 @@ namespace Network_Discovery
         //========================================
         // Public Properties
         //========================================
+        public bool Singleton
+        {
+            get => singleton;
+            set => singleton = value;
+        }
+
         /// <summary>
         /// Gets or sets the role of the network instance, defining whether it functions as a "Client" or "Server".
         /// </summary>
@@ -87,7 +98,11 @@ namespace Network_Discovery
         /// When set to "Server", the instance hosts the network and manages client connections.
         /// When set to "Client", the instance performs broadcasting to attempt connecting to a server.
         /// </remarks>
-        public NetworkRole Role { get => role; set => role = value; }
+        public NetworkRole Role
+        {
+            get => role;
+            set => role = value;
+        }
 
         /// <summary>
         /// A reference to the <see cref="Unity.Netcode.NetworkManager"/> instance.
@@ -97,7 +112,11 @@ namespace Network_Discovery
         /// such as starting and stopping network sessions, managing connected clients, and handling networked messages. It can
         /// be assigned or retrieved in order to integrate or customize behavior related to the Network Manager within the application.
         /// </remarks>
-        public NetworkManager NetworkManager { get => networkManager; set => networkManager = value; }
+        public NetworkManager NetworkManager
+        {
+            get => networkManager;
+            set => networkManager = value;
+        }
 
         /// <summary>
         /// The transport layer used for network communication in the application.
@@ -107,7 +126,11 @@ namespace Network_Discovery
         /// low-level networking functionality such as data transmission, connection management, and transport-specific settings.
         /// It is utilized by the NetworkManager to manage networked communication between clients and servers.
         /// </remarks>
-        public UnityTransport Transport { get => transport; set => transport = value; }
+        public UnityTransport Transport
+        {
+            get => transport;
+            set => transport = value;
+        }
 
         /// <summary>
         /// A shared key used for encryption and decryption of sensitive data during the network discovery process.
@@ -132,7 +155,11 @@ namespace Network_Discovery
         /// broadcasts. The port is used both in server and client modes to facilitate communication between
         /// peers. It must match between clients and the server for successful discovery and connection.
         /// </remarks>
-        public ushort Port { get => port; set => port = value; }
+        public ushort Port
+        {
+            get => port;
+            set => port = value;
+        }
 
         /// <summary>
         /// Determines whether the network discovery process starts automatically upon initialization.
@@ -143,7 +170,11 @@ namespace Network_Discovery
         /// This property allows for a hands-free configuration where the discovery process starts without requiring
         /// manual intervention via code or user input.
         /// </remarks>
-        public bool AutoStart { get => autoStart; set => autoStart = value; }
+        public bool AutoStart
+        {
+            get => autoStart;
+            set => autoStart = value;
+        }
 
         /// <summary>
         /// A property that determines whether the network system should automatically attempt
@@ -154,7 +185,11 @@ namespace Network_Discovery
         /// network connection when interruptions are resolved. This can be useful for maintaining
         /// persistent network connections in environments with unstable connectivity.
         /// </remarks>
-        public bool AutoReconnect { get => autoReconnect; set => autoReconnect = value; }
+        public bool AutoReconnect
+        {
+            get => autoReconnect;
+            set => autoReconnect = value;
+        }
 
         /// <summary>
         /// Determines whether the client registry feature is enabled for tracking connected clients.
@@ -165,7 +200,11 @@ namespace Network_Discovery
         /// each client. This feature can be useful for implementing more complex networking functionality
         /// that depends on client-specific records or states.
         /// </remarks>
-        public bool EnableClientRegistry { get => enableClientRegistry; set => enableClientRegistry = value; }
+        public bool EnableClientRegistry
+        {
+            get => enableClientRegistry;
+            set => enableClientRegistry = value;
+        }
 
         /// <summary>
         /// Determines whether network discovery should stop broadcasting or listening
@@ -180,7 +219,11 @@ namespace Network_Discovery
         /// <value>
         /// A boolean value that controls the behavior of the discovery process upon connection.
         /// </value>
-        public bool StopDiscoveryOnConnect { get => stopDiscoveryOnConnect; set => stopDiscoveryOnConnect = value; }
+        public bool StopDiscoveryOnConnect
+        {
+            get => stopDiscoveryOnConnect;
+            set => stopDiscoveryOnConnect = value;
+        }
 
         /// <summary>
         /// Specifies the delay interval in seconds between successive broadcast attempts made by the client during network discovery.
@@ -190,7 +233,11 @@ namespace Network_Discovery
         /// on the network. It is primarily used in the client role to manage broadcast frequency and can be adjusted to balance
         /// network efficiency and discovery speed.
         /// </remarks>
-        public float ClientBroadcastDelay { get => clientBroadcastDelay; set => clientBroadcastDelay = value; }
+        public float ClientBroadcastDelay
+        {
+            get => clientBroadcastDelay;
+            set => clientBroadcastDelay = value;
+        }
 
         /// <summary>
         /// The interval, in seconds, at which the client sends broadcast ping messages to discover a server.
@@ -200,7 +247,11 @@ namespace Network_Discovery
         /// available on the network. Reducing the interval may result in faster discovery but can increase
         /// network traffic, while increasing the interval can reduce traffic at the cost of slower detection.
         /// </remarks>
-        public float ClientBroadcastPingInterval { get => clientBroadcastPingInterval; set => clientBroadcastPingInterval = value; }
+        public float ClientBroadcastPingInterval
+        {
+            get => clientBroadcastPingInterval;
+            set => clientBroadcastPingInterval = value;
+        }
 
         /// <summary>
         /// The interval, in seconds, at which the server broadcasts presence information to clients.
@@ -211,7 +262,11 @@ namespace Network_Discovery
         /// and network traffic. Shorter intervals provide quicker discovery for clients but may increase
         /// network load. Longer intervals reduce network load but may delay client discovery.
         /// </remarks>
-        public float ServerBroadcastDelay { get => serverBroadcastDelay; set => serverBroadcastDelay = value; }
+        public float ServerBroadcastDelay
+        {
+            get => serverBroadcastDelay;
+            set => serverBroadcastDelay = value;
+        }
 
         /// <summary>
         /// Specifies the maximum number of broadcast attempts a client will make when attempting to discover a server.
@@ -221,7 +276,11 @@ namespace Network_Discovery
         /// to a server in the network discovery process. A value of 0 indicates no limit, meaning the client will continue
         /// to broadcast until either a connection is established or the process is manually stopped.
         /// </remarks>
-        public int MaxBroadcastAttempts { get => maxBroadcastAttempts; set => maxBroadcastAttempts = value; }
+        public int MaxBroadcastAttempts
+        {
+            get => maxBroadcastAttempts;
+            set => maxBroadcastAttempts = value;
+        }
 
         /// <summary>
         /// Indicates whether the current instance of the network discovery is operating in client mode.
@@ -242,7 +301,7 @@ namespace Network_Discovery
         /// When false, the instance operates in client mode, sending discovery requests and waiting for responses from servers.
         /// </remarks>
         public bool IsServer { get; private set; }
-        
+
 
         //========================================
         // Private Fields
@@ -270,6 +329,17 @@ namespace Network_Discovery
             networkManager.OnConnectionEvent += OnConnectionEvent;
             networkManager.OnServerStopped += HandleConnectionChange;
             networkManager.OnClientStopped += HandleConnectionChange;
+            
+            if (singleton)
+            {
+                if (SingletonInstance)
+                {
+                    return;
+                }
+                
+                SingletonInstance = this;
+                DontDestroyOnLoad(gameObject);
+            }
         }
 
         private void Start()
@@ -308,6 +378,7 @@ namespace Network_Discovery
                         SendMacHandshake();
                         OnClientConnection?.Invoke(data.ClientId, GetMacAddress());
                     }
+
                     break;
 
                 case ConnectionEvent.ClientDisconnected:
@@ -802,7 +873,11 @@ namespace Network_Discovery
                 yield return new WaitForSecondsRealtime(1f);
             }
         }
-        
-        private enum MessageType : byte { BroadCast, Response }
+
+        private enum MessageType : byte
+        {
+            BroadCast,
+            Response
+        }
     }
 }
