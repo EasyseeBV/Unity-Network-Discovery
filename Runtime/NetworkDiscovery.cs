@@ -442,7 +442,7 @@ namespace Network_Discovery
 
             if (_lastReachability == NetworkReachability.NotReachable)
             {
-                throw new InvalidOperationException("Cannot start network discovery: no network reachable.");
+                Debug.LogWarning("There is no active internet connection");
             }
 
             if (role == NetworkRole.Server)
