@@ -786,11 +786,12 @@ namespace Network_Discovery
                 response = default;
                 return false;
             }
+            
+            string replyIp = transport.ConnectionData.Address != "0.0.0.0"
+                ? transport.ConnectionData.Address
+                : GetLocalAddressFor(sender);
 
-            // 3) (optioneel) client-registry bijwerken – bestaande code laten staan
-
-            // 4) bepaal IP dat bereikbaar is voor deze client
-            string replyIp = GetLocalAddressFor(sender);
+            response = new DiscoveryResponseData(SharedKey, transport.ConnectionData.Port, replyIp);
 
             // 5) bouw response
             response = new DiscoveryResponseData(SharedKey, transport.ConnectionData.Port, replyIp);
