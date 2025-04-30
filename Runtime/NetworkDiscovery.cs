@@ -12,7 +12,6 @@ using Unity.Collections;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 namespace Network_Discovery
 {
@@ -51,35 +50,66 @@ namespace Network_Discovery
         //========================================
         // Serialized Inspector Fields
         //========================================
-        [SerializeField] private bool singleton = false;
+        [SerializeField]
+        private bool singleton = false;
 
         [Header("Network Role")]
-        [SerializeField] private NetworkRole role = NetworkRole.Server;
+        [SerializeField]
+        private NetworkRole role = NetworkRole.Server;
+
+        [Header("Host Selection")]
+        [Tooltip("Laat leeg voor auto-detect, gebruik 0.0.0.0 om op alle adapters te binden, "
+                 + "of vul het exacte IPv4-adres in dat de server moet gebruiken.")]
+        [SerializeField]
+        private string specificHostIP = "0.0.0.0";
 
         [Header("Broadcast Port")]
-        [SerializeField] private ushort port = 47777;
+        [SerializeField]
+        private ushort port = 47777;
 
         [Header("Timing")]
-        [SerializeField] private float serverBroadcastDelay = 3f;
-        [SerializeField] private float clientBroadcastDelay = 3f;
-        [SerializeField] private float clientBroadcastPingInterval = 3f;
+        [SerializeField]
+        private float serverBroadcastDelay = 3f;
+
+        [SerializeField]
+        private float clientBroadcastDelay = 3f;
+
+        [SerializeField]
+        private float clientBroadcastPingInterval = 3f;
 
         [Header("Discovery Options")]
-        [SerializeField] private bool autoStart = true;
-        [SerializeField] private bool autoReconnect = true;
-        [SerializeField] private bool stopDiscoveryOnConnect = true;
-        [SerializeField] private int maxBroadcastAttempts = 0;
+        [SerializeField]
+        private bool autoStart = true;
+
+        [SerializeField]
+        private bool autoReconnect = true;
+
+        [SerializeField]
+        private bool stopDiscoveryOnConnect = true;
+
+        [SerializeField]
+        private int maxBroadcastAttempts = 0;
 
         [Header("Client Registry (Optional)")]
-        [SerializeField] private bool enableClientRegistry = true;
+        [SerializeField]
+        private bool enableClientRegistry = true;
 
         [Header("References")]
-        [SerializeField] private NetworkManager networkManager;
-        [SerializeField] private UnityTransport transport;
+        [SerializeField]
+        private NetworkManager networkManager;
+
+        [SerializeField]
+        private UnityTransport transport;
 
 #if UNITY_EDITOR
-        [SerializeField] private List<ClientInfo> editorClientRegistry;
+        [SerializeField]
+        private List<ClientInfo> editorClientRegistry;
 #endif
+
+        private CancellationTokenSource _reachabilityCts; // voor netwerk-monitoring (auto-reconnect)
+        private string hostingIPAddress; // IP waarop de server daadwerkelijk luistert
+
+        #region Public Properties
 
         //========================================
         // Public Properties
@@ -302,6 +332,7 @@ namespace Network_Discovery
         /// </remarks>
         public bool IsServer { get; private set; }
 
+        #endregion
 
         //========================================
         // Private Fields
@@ -329,14 +360,14 @@ namespace Network_Discovery
             networkManager.OnConnectionEvent += OnConnectionEvent;
             networkManager.OnServerStopped += HandleConnectionChange;
             networkManager.OnClientStopped += HandleConnectionChange;
-            
+
             if (singleton)
             {
                 if (SingletonInstance)
                 {
                     return;
                 }
-                
+
                 SingletonInstance = this;
                 DontDestroyOnLoad(gameObject);
             }
@@ -457,9 +488,26 @@ namespace Network_Discovery
 
         private void HostGame()
         {
-            var localIp = GetLocalIPAddress();
-            transport.SetConnectionData(localIp, transport.ConnectionData.Port);
-            Debug.Log($"[LocalNetworkDiscovery] Hosting on IP: {localIp}, Port: {transport.ConnectionData.Port}");
+            // ❶ inspector-waarde
+            string hostIp = specificHostIP?.Trim();
+
+            // ❷ bind *alleen* op alle adapters wanneer 0.0.0.0 is opgegeven
+            bool bindAny = hostIp == "0.0.0.0";
+
+            // ❸ auto-detect wanneer leeg of ongeldig
+            if (string.IsNullOrWhiteSpace(hostIp) || (!bindAny && !IPAddress.TryParse(hostIp, out _)))
+                hostIp = GetLocalIPAddress();
+            else if (!IPAddress.TryParse(hostIp, out _))
+            {
+                Debug.LogWarning($"[NetworkDiscovery] '{hostIp}' is geen geldig IPv4-adres → fallback auto-detect.");
+                hostIp = GetLocalIPAddress();
+            }
+
+            // ❸   Configureer transport  (0.0.0.0 == IPAddress.Any)
+            transport.SetConnectionData(bindAny ? "0.0.0.0" : hostIp, transport.ConnectionData.Port);
+            hostingIPAddress = hostIp; // voor GetLocalAddressFor-fallback
+
+            Debug.Log($"[NetworkDiscovery] Hosting op {(bindAny ? "ALLE" : hostIp)}:{transport.ConnectionData.Port}");
             networkManager.StartServer();
         }
 
@@ -500,34 +548,32 @@ namespace Network_Discovery
 
         private void OnMacHandshakeMessageReceived(ulong senderClientId, FastBufferReader reader)
         {
+            if (!NetworkManager.IsServer || !enableClientRegistry) return;
+
             try
             {
+                if (!reader.TryBeginRead(sizeof(uint))) return;
                 reader.ReadValueSafe(out uint payloadSize);
-                byte[] encryptedBytes = new byte[payloadSize];
 
-                for (int i = 0; i < payloadSize; i++)
-                {
-                    reader.ReadValueSafe(out encryptedBytes[i]);
-                }
+                if (payloadSize == 0 || payloadSize > 1024) return;
+                if (!reader.TryBeginRead((int)payloadSize)) return;
 
-                byte[] decryptedBytes = CryptoHelper.DecryptBytes(encryptedBytes, SharedKey);
-                if (decryptedBytes == null)
-                {
-                    Debug.LogWarning("[Server] Decryption failed. Possibly wrong key. Ignoring.");
-                    return;
-                }
+                byte[] enc = new byte[payloadSize];
+                reader.ReadBytesSafe(ref enc, (int)payloadSize);
 
-                string decryptedMac = Encoding.UTF8.GetString(decryptedBytes);
-                if (!string.IsNullOrEmpty(decryptedMac))
-                {
-                    RegisterClientMac(senderClientId, decryptedMac);
-                }
+                byte[] dec = CryptoHelper.DecryptBytes(enc, SharedKey);
+                if (dec == null || dec.Length == 0) return;
+
+                string mac = Encoding.UTF8.GetString(dec).Trim();
+                if (IsValidMacAddress(mac))
+                    RegisterClientMac(senderClientId, mac);
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[Server] Error reading handshake message: {ex}");
+                Debug.LogError($"[Server Handshake] {ex}");
             }
         }
+
 
         private void SendMacHandshake()
         {
@@ -554,33 +600,36 @@ namespace Network_Discovery
 
         private void RegisterClientMac(ulong clientId, string mac)
         {
-            if (_clientRegistry.TryGetValue(mac, out ClientInfo info))
+            if (_clientRegistry.TryGetValue(mac, out var info))
             {
-                info.LastSeenTicks = DateTime.Now.Ticks;
+                info.LastSeenTicks = DateTime.UtcNow.Ticks;
                 info.CurrentClientId = clientId;
                 info.IsConnected = true;
                 _clientRegistry[mac] = info;
             }
             else
             {
-                // Newly discovered MAC
-                var newInfo = new ClientInfo(mac)
+                _clientRegistry[mac] = new ClientInfo(mac)
                 {
-                    LastSeenTicks = DateTime.Now.Ticks,
+                    LastSeenTicks = DateTime.UtcNow.Ticks,
                     CurrentClientId = clientId,
                     IsConnected = true
                 };
-                _clientRegistry[mac] = newInfo;
             }
 
+            // oude PID-mapping opruimen als dezelfde client opnieuw verbindt
+            if (_pidToMac.TryGetValue(clientId, out var oldMac) && oldMac != mac)
+                _clientRegistry.Remove(oldMac);
+
             _pidToMac[clientId] = mac;
-            Debug.Log($"Updated client registry: {_clientRegistry[mac]}");
+
             OnClientConnection?.Invoke(clientId, mac);
 
 #if UNITY_EDITOR
             editorClientRegistry = _clientRegistry.Values.ToList();
 #endif
         }
+
 
         //////////////////////////////////////////////////////////////////////////////////
         // Network Discovery & Broadcast
@@ -686,6 +735,7 @@ namespace Network_Discovery
 
         private async Task ReceiveBroadcastAsync()
         {
+            Debug.Log("Broadcast received");
             UdpReceiveResult udpResult = await _client.ReceiveAsync();
             var segment = new ArraySegment<byte>(udpResult.Buffer, 0, udpResult.Buffer.Length);
 
@@ -718,81 +768,186 @@ namespace Network_Discovery
             _client?.SendAsync(data, data.Length, endPoint);
         }
 
-        private bool ProcessBroadcastImpl(IPEndPoint sender, DiscoveryBroadcastData broadcast,
+        private bool ProcessBroadcastImpl(IPEndPoint sender,
+            DiscoveryBroadcastData broadcast,
             out DiscoveryResponseData response)
         {
-            string expectedToken = CryptoHelper.EncryptString("authToken", SharedKey);
-            if (broadcast.AuthTokenHash != expectedToken)
+            // 1) auth-token
+            string expected = CryptoHelper.EncryptString("authToken", SharedKey);
+            if (broadcast.AuthTokenHash != expected)
             {
-                Debug.Log("[Authentication] Invalid key, ignoring client broadcast.");
                 response = default;
                 return false;
             }
 
+            // 2) nonce / timestamp
             if (!_nonceManager.ValidateAndStoreNonce(broadcast.Nonce, broadcast.Timestamp))
             {
-                Debug.Log("[Authentication] Nonce/timestamp check failed, ignoring client broadcast.");
                 response = default;
                 return false;
             }
 
-            if (enableClientRegistry)
-            {
-                string mac = broadcast.MacAddress;
-                if (!string.IsNullOrEmpty(mac))
-                {
-                    if (_clientRegistry.ContainsKey(mac))
-                    {
-                        var clientInfo = _clientRegistry[mac];
-                        clientInfo.LastSeenTicks = DateTime.Now.Ticks;
-                        _clientRegistry[mac] = clientInfo;
-                        Debug.Log($"[ClientRegistry] Previously connected client tries to reconnect: {mac}");
-                    }
-                    else
-                    {
-                        var info = new ClientInfo(mac);
-                        _clientRegistry.Add(mac, info);
-                        Debug.Log(
-                            $"[ClientRegistry] Registered new client with MAC: {mac}, PID {info.CurrentClientId}");
-#if UNITY_EDITOR
-                        editorClientRegistry = _clientRegistry.Values.ToList();
-#endif
-                    }
-                }
-            }
+            // 3) (optioneel) client-registry bijwerken – bestaande code laten staan
 
-            response = new DiscoveryResponseData(SharedKey, transport.ConnectionData.Port);
+            // 4) bepaal IP dat bereikbaar is voor deze client
+            string replyIp = GetLocalAddressFor(sender);
+
+            // 5) bouw response
+            response = new DiscoveryResponseData(SharedKey, transport.ConnectionData.Port, replyIp);
             return true;
         }
 
         private void ResponseReceived(IPEndPoint sender, DiscoveryResponseData response)
         {
-            string expectedToken = CryptoHelper.EncryptString("authToken", SharedKey);
-            if (response.AuthTokenHash != expectedToken)
-            {
-                Debug.Log($"[Authentication] Invalid server key token from {sender}, ignoring response.");
-                return;
-            }
+            string expected = CryptoHelper.EncryptString("authToken", SharedKey);
+            if (response.AuthTokenHash != expected) return;
 
-            transport.SetConnectionData(sender.Address.ToString(), response.Port);
-            networkManager.StartClient();
+            if (networkManager.IsConnectedClient || networkManager.IsListening) return;
+
+            if (string.IsNullOrEmpty(response.ServerAddress) ||
+                !IPAddress.TryParse(response.ServerAddress, out _))
+                return;
+
+            transport.SetConnectionData(response.ServerAddress, response.Port);
+            networkManager.StartClient(); // resultaat komt via OnConnectionEvent
         }
+
+        private void StartNetworkReachabilityCheck()
+        {
+            StopNetworkReachabilityCheck();
+            _reachabilityCts = new CancellationTokenSource();
+            StartCoroutine(NetworkReachabilityCheckCR(_reachabilityCts.Token));
+        }
+
+        private void StopNetworkReachabilityCheck()
+        {
+            if (_reachabilityCts != null)
+            {
+                if (!_reachabilityCts.IsCancellationRequested)
+                    _reachabilityCts.Cancel();
+                _reachabilityCts.Dispose();
+                _reachabilityCts = null;
+            }
+        }
+
+        private IEnumerator NetworkReachabilityCheckCR(CancellationToken token)
+        {
+            var wait = new WaitForSecondsRealtime(2f);
+
+            while (!token.IsCancellationRequested)
+            {
+                var current = Application.internetReachability;
+
+                if (current != _lastReachability)
+                {
+                    var previous = _lastReachability;
+                    _lastReachability = current;
+
+                    // netwerk viel weg en komt terug → opnieuw verbinden
+                    if (autoReconnect &&
+                        role == NetworkRole.Client &&
+                        previous == NetworkReachability.NotReachable &&
+                        current != NetworkReachability.NotReachable)
+                    {
+                        if (!networkManager.IsConnectedClient && !networkManager.IsListening)
+                        {
+                            yield return new WaitForSeconds(0.5f); // kleine stabilisatie-pauze
+                            if (!token.IsCancellationRequested)
+                                StartConnection();
+                        }
+                    }
+                }
+
+                yield return wait;
+            }
+        }
+
 
         //////////////////////////////////////////////////////////////////////////////////
         // Utility Functions
         //////////////////////////////////////////////////////////////////////////////////
-
         private string GetLocalIPAddress()
         {
-            var host = Dns.GetHostEntry(Dns.GetHostName());
-            var ip = host.AddressList.FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork);
-            if (ip == null)
+            try
             {
-                Debug.LogWarning("[NetworkDiscovery] Could not find a valid IPv4 address; defaulting to localhost.");
-                return "127.0.0.1";
+                var nics = NetworkInterface.GetAllNetworkInterfaces()
+                    .Where(n => n.OperationalStatus == OperationalStatus.Up &&
+                                n.NetworkInterfaceType != NetworkInterfaceType.Loopback &&
+                                n.NetworkInterfaceType != NetworkInterfaceType.Tunnel);
+
+                // ❶   Eerst een adapter zoeken met een default-gateway (≠ 0.0.0.0)
+                var gwNic = nics.FirstOrDefault(n =>
+                    n.GetIPProperties().GatewayAddresses
+                        .Any(g => g?.Address?.AddressFamily == AddressFamily.InterNetwork &&
+                                  !g.Address.Equals(IPAddress.Any)));
+
+                IEnumerable<NetworkInterface> ordered =
+                    gwNic != null ? new[] { gwNic } : nics;
+
+                ordered = ordered.OrderByDescending(n => n.NetworkInterfaceType == NetworkInterfaceType.Ethernet)
+                    .ThenByDescending(n => n.NetworkInterfaceType == NetworkInterfaceType.Wireless80211)
+                    .ThenByDescending(n => n.Speed);
+
+                foreach (var nic in ordered)
+                {
+                    var ip = nic.GetIPProperties().UnicastAddresses
+                        .FirstOrDefault(u => u.Address.AddressFamily == AddressFamily.InterNetwork);
+                    if (ip != null)
+                        return ip.Address.ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[NetworkDiscovery] IP-detectie faalde: {ex.Message}");
             }
 
-            return ip.ToString();
+            return "127.0.0.1"; // ultimate fallback
+        }
+
+        private static bool IsValidMacAddress(string mac)
+        {
+            if (string.IsNullOrWhiteSpace(mac)) return false;
+
+            // accepteert zowel “A1-B2-C3-D4-E5-F6” als “A1:B2:C3:D4:E5:F6” of “A1B2C3D4E5F6”
+            return System.Text.RegularExpressions.Regex.IsMatch(
+                mac,
+                @"^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$|^([0-9A-Fa-f]{12})$");
+        }
+
+
+        private string GetLocalAddressFor(IPEndPoint remote)
+        {
+            foreach (var nic in NetworkInterface.GetAllNetworkInterfaces()
+                         .Where(n => n.OperationalStatus == OperationalStatus.Up &&
+                                     n.Supports(NetworkInterfaceComponent.IPv4)))
+            {
+                var props = nic.GetIPProperties();
+                foreach (var uni in props.UnicastAddresses)
+                {
+                    if (uni.Address.AddressFamily != AddressFamily.InterNetwork || uni.IPv4Mask == null)
+                        continue;
+
+                    byte[] addr = uni.Address.GetAddressBytes();
+                    byte[] mask = uni.IPv4Mask.GetAddressBytes();
+                    byte[] rem = remote.Address.GetAddressBytes();
+
+                    bool sameSubnet = true;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        if ((addr[i] & mask[i]) != (rem[i] & mask[i]))
+                        {
+                            sameSubnet = false;
+                            break;
+                        }
+                    }
+
+                    if (sameSubnet)
+                        return uni.Address.ToString();
+                }
+            }
+
+            // fallback – gebruik het IP waarop je in HostGame() gebonden hebt
+            return hostingIPAddress;
         }
 
         private DiscoveryBroadcastData CreateBroadcastData()

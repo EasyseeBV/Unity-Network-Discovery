@@ -1,4 +1,5 @@
-﻿using System;
+﻿// DiscoveryResponseData.cs
+using System;
 using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
@@ -8,12 +9,14 @@ namespace Network_Discovery
     public struct DiscoveryResponseData : INetworkSerializable
     {
         public ushort Port;
+        public string ServerAddress;
         public string AuthTokenHash;
 
-        public DiscoveryResponseData(string rawKey, ushort port)
+        public DiscoveryResponseData(string rawKey, ushort port, string serverAddress)
         {
             AuthTokenHash = CryptoHelper.EncryptString("authToken", rawKey);
             Port = port;
+            ServerAddress = serverAddress;
             _encryptedPayload = null;
         }
 
@@ -24,13 +27,13 @@ namespace Network_Discovery
             string key = NetworkDiscovery.SharedKey;
             if (serializer.IsWriter)
             {
-                using (FastBufferWriter tempWriter = new FastBufferWriter(64, Allocator.Temp))
+                using (var tempWriter = new FastBufferWriter(128, Allocator.Temp))
                 {
                     tempWriter.WriteValueSafe(Port);
+                    tempWriter.WriteValueSafe(ServerAddress);
                     tempWriter.WriteValueSafe(AuthTokenHash);
 
                     byte[] plainData = tempWriter.ToArray();
-
                     _encryptedPayload = CryptoHelper.EncryptBytes(plainData, key);
 
                     int length = _encryptedPayload.Length;
@@ -50,14 +53,16 @@ namespace Network_Discovery
                 if (plainData == null)
                 {
                     Port = 0;
+                    ServerAddress = "";
                     AuthTokenHash = "";
-                    Debug.LogWarning("[DiscoveryResponseData] Decryption returned null; using default values.");
+                    Debug.LogWarning("[DiscoveryResponseData] Decryption failed; using defaults.");
                     return;
                 }
 
-                using (FastBufferReader tempReader = new FastBufferReader(plainData, Allocator.Temp))
+                using (var tempReader = new FastBufferReader(plainData, Allocator.Temp))
                 {
                     tempReader.ReadValueSafe(out Port);
+                    tempReader.ReadValueSafe(out ServerAddress);
                     tempReader.ReadValueSafe(out AuthTokenHash);
                 }
             }
