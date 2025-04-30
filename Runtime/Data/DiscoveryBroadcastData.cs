@@ -83,30 +83,3 @@ namespace Network_Discovery
         }
     }
 }
-
-/* Huidig systeem:
- * 1. UDP Broadcast Ping De client stuurt een broadcast (255.255.255.255:47777) met daarin het versleuteld AuthToken,
- * een nonce en optioneel zijn MAC.
- *
- * 2. Server luistert op poort 47777 bOmdat de socket gebonden is op 0.0.0.0: 47777 (bindAny) of een specifiek adres:
- * 47777, krijgt hij elke ping binnen, ongeacht welke NIC.
- * 
- * 3. Verwerking door de server AuthToken: klopt het met de SharedKey?
- * Nonce/Timestamp: nog niet gezien en niet te oud? Subnet-keuze:
- * bepaal via GetLocalAddressFor(sender) welke eigen IP in hetzelfde subnet zit als de client.
- *
- * 4. De server stuurt een unicast terug naar het bronadres van de ping, met daarin de IP waarin 'gehost' wordt en de port
- *
- * 5. Client ontvangt de response
- * De client ziet nu exact welk IP en poort hij moet gebruiken om de Netcode-verbinding te maken.
- *
- * 6. Configureer UnityTransport
- * transport.SetConnectionData(ServerAddress, Port)
- *
- * 7. Start Netcode client
- * networkManager.StartClient()
- *
- * 8. Server accepteert verbinding
- * De standaard Netcode handshake vangt daarna de TCP/UDP game-sessie op.
- * 
- */
