@@ -46,6 +46,7 @@ namespace Network_Discovery
         /// It allows listeners to handle cleanup, update client states, or log disconnection activity.
         /// </remarks>
         public static event Action<string> OnClientDisconnection;
+        public static event Action<ulong, string> OnClientReconnection;
 
         //========================================
         // Serialized Inspector Fields
@@ -343,6 +344,7 @@ namespace Network_Discovery
         private CancellationTokenSource _cancellationTokenSource;
         private UdpClient _client;
         private NetworkReachability _lastReachability;
+        private static bool _localHasConnected;
 
         //////////////////////////////////////////////////////////////////////////////////
         // Unity Lifecycle Methods
@@ -404,8 +406,9 @@ namespace Network_Discovery
             {
                 case ConnectionEvent.ClientConnected:
                     Debug.Log($"A client has connected with PID {data.ClientId}");
-                    if (data.ClientId == networkManager.LocalClientId)
+                    if (data.ClientId == networkManager.LocalClientId) // Is the connected client the local?
                     {
+                        // Double verification of MAC address for safety.
                         SendMacHandshake();
                         OnClientConnection?.Invoke(data.ClientId, GetMacAddress());
                     }
@@ -545,7 +548,11 @@ namespace Network_Discovery
         //////////////////////////////////////////////////////////////////////////////////
         // Messaging & Handshake
         //////////////////////////////////////////////////////////////////////////////////
-
+        /// <summary>
+        /// Handles the reception of a MAC handshake message from a client on the server.
+        /// </summary>
+        /// <param name="senderClientId">The ID of the client sending the handshake message.</param>
+        /// <param name="reader">The message payload received from the client.</param>
         private void OnMacHandshakeMessageReceived(ulong senderClientId, FastBufferReader reader)
         {
             if (!NetworkManager.IsServer || !enableClientRegistry) return;
@@ -565,8 +572,7 @@ namespace Network_Discovery
                 if (dec == null || dec.Length == 0) return;
 
                 string mac = Encoding.UTF8.GetString(dec).Trim();
-                if (IsValidMacAddress(mac))
-                    RegisterClientMac(senderClientId, mac);
+                if (IsValidMacAddress(mac)) RegisterClientMac(senderClientId, mac);
             }
             catch (Exception ex)
             {
@@ -595,6 +601,13 @@ namespace Network_Discovery
             NetworkManager.Singleton.CustomMessagingManager
                 .SendNamedMessage("ClientMacHandshake", NetworkManager.ServerClientId, writer);
 
+            if (_localHasConnected)
+            {
+                Debug.Log($"Local client has reconnected to the server.");
+                OnClientReconnection?.Invoke(networkManager.LocalClientId, mac);
+            }
+
+            _localHasConnected = true;
             Debug.Log($"{networkManager.LocalClientId} sent handshake message to server with MAC {mac}");
         }
 
@@ -602,10 +615,14 @@ namespace Network_Discovery
         {
             if (_clientRegistry.TryGetValue(mac, out var info))
             {
+                Debug.Log($"[SERVER] Client {clientId} reconnected.");
+                
                 info.LastSeenTicks = DateTime.UtcNow.Ticks;
                 info.CurrentClientId = clientId;
                 info.IsConnected = true;
                 _clientRegistry[mac] = info;
+                
+                OnClientReconnection?.Invoke(clientId, mac);
             }
             else
             {
@@ -618,8 +635,7 @@ namespace Network_Discovery
             }
 
             // oude PID-mapping opruimen als dezelfde client opnieuw verbindt
-            if (_pidToMac.TryGetValue(clientId, out var oldMac) && oldMac != mac)
-                _clientRegistry.Remove(oldMac);
+            if (_pidToMac.TryGetValue(clientId, out var oldMac) && oldMac != mac) _clientRegistry.Remove(oldMac);
 
             _pidToMac[clientId] = mac;
 
@@ -905,6 +921,11 @@ namespace Network_Discovery
             return "127.0.0.1"; // ultimate fallback
         }
 
+        /// <summary>
+        /// Validates whether a given string conforms to a valid MAC address format.
+        /// </summary>
+        /// <param name="mac">The string representation of the MAC address to validate.</param>
+        /// <returns>True if the string is a valid MAC address, otherwise false.</returns>
         private static bool IsValidMacAddress(string mac)
         {
             if (string.IsNullOrWhiteSpace(mac)) return false;
