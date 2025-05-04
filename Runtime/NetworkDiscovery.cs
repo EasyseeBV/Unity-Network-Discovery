@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Unity.Collections;
+using Unity.Multiplayer.Playmode;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
@@ -354,6 +355,8 @@ namespace Network_Discovery
         {
             if (!transport) transport = FindFirstObjectByType<UnityTransport>();
             if (!networkManager) networkManager = FindFirstObjectByType<NetworkManager>();
+            
+            if (CurrentPlayer.ReadOnlyTags().Contains("client")) role = NetworkRole.Client;
         }
 
         private void OnEnable()
