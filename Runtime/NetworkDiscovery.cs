@@ -47,6 +47,8 @@ namespace Network_Discovery
         /// It allows listeners to handle cleanup, update client states, or log disconnection activity.
         /// </remarks>
         public static event Action<string> OnClientDisconnection;
+        public static event Action OnServerDisconnection;
+
         public static event Action<ulong, string> OnClientReconnection;
 
         //========================================
@@ -434,6 +436,10 @@ namespace Network_Discovery
                             editorClientRegistry = _clientRegistry.Values.ToList();
 #endif
                         }
+                    }
+                    else
+                    {
+                        OnServerDisconnection?.Invoke();
                     }
 
                     break;
