@@ -65,7 +65,7 @@ namespace Network_Discovery
         [Tooltip("Laat leeg voor auto-detect, gebruik 0.0.0.0 om op alle adapters te binden, "
                  + "of vul het exacte IPv4-adres in dat de server moet gebruiken.")]
         [SerializeField]
-        private string specificHostIP = "0.0.0.0";
+        public string specificHostIP = "0.0.0.0";
 
         [Header("Broadcast Port")]
         [SerializeField]
