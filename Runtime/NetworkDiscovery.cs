@@ -16,6 +16,7 @@ using UnityEngine;
 
 namespace Network_Discovery
 {
+    [DefaultExecutionOrder(-100)]
     public class NetworkDiscovery : MonoBehaviour
     {
         public static NetworkDiscovery SingletonInstance { get; private set; }
