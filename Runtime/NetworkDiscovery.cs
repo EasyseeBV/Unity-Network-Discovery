@@ -489,7 +489,7 @@ namespace Network_Discovery
                 Debug.LogWarning("There is no active internet connection");
             }
 
-            if (role == NetworkRole.Server)
+            if (role == NetworkRole.Server || role == NetworkRole.Host)
             {
                 HostGame();
             }
@@ -521,7 +521,9 @@ namespace Network_Discovery
             hostingIPAddress = hostIp; // voor GetLocalAddressFor-fallback
 
             Debug.Log($"[NetworkDiscovery] Hosting op {(bindAny ? "ALLE" : hostIp)}:{transport.ConnectionData.Port}");
-            networkManager.StartServer();
+            
+            if (role == NetworkRole.Server) networkManager.StartServer();
+            else if (role == role == NetworkRole.Host) networkManager.StartHost();
         }
 
         private IEnumerator ClientBroadcastCR()
