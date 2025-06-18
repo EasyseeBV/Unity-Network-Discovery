@@ -523,7 +523,7 @@ namespace Network_Discovery
             Debug.Log($"[NetworkDiscovery] Hosting op {(bindAny ? "ALLE" : hostIp)}:{transport.ConnectionData.Port}");
             
             if (role == NetworkRole.Server) networkManager.StartServer();
-            else if (role == role == NetworkRole.Host) networkManager.StartHost();
+            else if (role == NetworkRole.Host) networkManager.StartHost();
         }
 
         private IEnumerator ClientBroadcastCR()
